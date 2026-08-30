@@ -1,0 +1,12 @@
+{
+  "0xccc333ccc333ccc333ccc333ccc333ccc333ccc3": {
+    "address": "0xccc333ccc333ccc333ccc333ccc333ccc333ccc3",
+    "chain": "ETH",
+    "entity": "Example Exchange",
+    "type": "exchange",
+    "source": "Etherscan label",
+    "source_url": "https://etherscan.io/address/0xccc333ccc333ccc333ccc333ccc333ccc333ccc3",
+    "source_date": "2026-08-01",
+    "confidence": "HIGH"
+  }
+}

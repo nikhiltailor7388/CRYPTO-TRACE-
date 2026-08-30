@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+networkx
+pydantic
+requests
+reportlab
+python-dotenv
+pytest
+PyJWT

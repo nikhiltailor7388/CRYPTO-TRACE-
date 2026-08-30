@@ -1,0 +1,35 @@
+[
+  {
+    "tx_hash": "0xhash_victim_to_a",
+    "from": "0xvictim",
+    "to": "0xaaa111aaa111aaa111aaa111aaa111aaa111aaa1",
+    "amount": 10.0,
+    "asset": "ETH",
+    "timestamp": "2024-06-01T09:00:00Z",
+    "block": 19000001,
+    "chain": "ETH",
+    "source_url": "https://etherscan.io/tx/0xhash_victim_to_a"
+  },
+  {
+    "tx_hash": "0xhash_a_to_b",
+    "from": "0xaaa111aaa111aaa111aaa111aaa111aaa111aaa1",
+    "to": "0xbbb222bbb222bbb222bbb222bbb222bbb222bbb2",
+    "amount": 20.0,
+    "asset": "ETH",
+    "timestamp": "2024-06-01T10:00:00Z",
+    "block": 19000002,
+    "chain": "ETH",
+    "source_url": "https://etherscan.io/tx/0xhash_a_to_b"
+  },
+  {
+    "tx_hash": "0xhash_b_to_c",
+    "from": "0xbbb222bbb222bbb222bbb222bbb222bbb222bbb2",
+    "to": "0xccc333ccc333ccc333ccc333ccc333ccc333ccc3",
+    "amount": 5.0,
+    "asset": "ETH",
+    "timestamp": "2024-06-01T11:00:00Z",
+    "block": 19000003,
+    "chain": "ETH",
+    "source_url": "https://etherscan.io/tx/0xhash_b_to_c"
+  }
+]

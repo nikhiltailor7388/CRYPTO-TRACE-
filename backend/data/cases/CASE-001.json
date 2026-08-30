@@ -1,0 +1,145 @@
+{
+  "case_id": "CASE-001",
+  "status": "complete",
+  "wallets": [
+    {
+      "address": "nilakshi",
+      "role": "suspect"
+    },
+    {
+      "address": "kheshav 0xccc333ccc333ccc333ccc333ccc333ccc333ccc3",
+      "role": "suspect"
+    },
+    {
+      "address": "nikhil111aaa111aaa",
+      "role": "suspect"
+    },
+    {
+      "address": "megha111aaa111aaa111aaa111aaa111aaa111aaa1",
+      "role": "suspect"
+    },
+    {
+      "address": "rashi10xbbb222bbb222bbb222bbb222bbb222bbb222bbb2",
+      "role": "suspect"
+    }
+  ],
+  "source_wallet": "nilakshi",
+  "target_wallet": "kheshav 0xccc333ccc333ccc333ccc333ccc333ccc333ccc3",
+  "summary": {
+    "total_transactions": 3,
+    "hops_traced": 2,
+    "total_value": 35.0,
+    "traceable_value": 0.0,
+    "unclassified_value": 35.0,
+    "vasp_matches": 1,
+    "risk_score": 99,
+    "fraud_probability": 56
+  },
+  "risk_profile": {
+    "overall_probability": 56,
+    "confidence": "medium",
+    "fraudster_candidate": "0xaaa111aaa111aaa111aaa111aaa111aaa111aaa1",
+    "risk_factors": [
+      {
+        "name": "Direct exposure",
+        "score": 0,
+        "rule": "direct_exposure",
+        "confidence": "low",
+        "explanation": "The traced wallet shows meaningful downstream value movement that is directly tied to the case flow."
+      },
+      {
+        "name": "VASP linkage",
+        "score": 12,
+        "rule": "vasp_linkage",
+        "confidence": "medium",
+        "explanation": "Known VASP or exchange labels appear in the trace; this indicates a potential destination or off-ramp pattern."
+      },
+      {
+        "name": "Unclassified flow",
+        "score": 25,
+        "rule": "unclassified_flow",
+        "confidence": "medium",
+        "explanation": "A non-trivial portion of the funds cannot be cleanly assigned to a known wallet or exchange path."
+      },
+      {
+        "name": "Propagation depth",
+        "score": 8,
+        "rule": "propagation_depth",
+        "confidence": "medium",
+        "explanation": "The flow spreads through multiple addresses, increasing the chance of layering or obfuscation."
+      }
+    ],
+    "suspicious_path": [
+      "0xvictim",
+      "0xaaa111aaa111aaa111aaa111aaa111aaa111aaa1"
+    ]
+  },
+  "graph": {
+    "nodes": [
+      "nikhil111aaa111aaa",
+      "nilakshi",
+      "megha111aaa111aaa111aaa111aaa111aaa111aaa1",
+      "kheshav 0xccc333ccc333ccc333ccc333ccc333ccc333ccc3",
+      "rashi10xbbb222bbb222bbb222bbb222bbb222bbb222bbb2"
+    ],
+    "edges": []
+  },
+  "graph_hash": "6f55f272c1d25bffa4d587dd03eb3b34",
+  "vasp_matches": [
+    {
+      "entity": "Example Exchange",
+      "confidence": "HIGH",
+      "matches": 1,
+      "amount": 0.0
+    }
+  ],
+  "evidence": [
+    {
+      "hop": null,
+      "from": "0xvictim",
+      "to": "0xaaa111aaa111aaa111aaa111aaa111aaa111aaa1",
+      "amount": 10.0,
+      "asset": "ETH",
+      "traceable_amount": 0.0,
+      "unclassified_amount": 10.0,
+      "tx_hash": "0xhash_victim_to_a",
+      "timestamp": "2024-06-01T09:00:00Z",
+      "block": null,
+      "vasp": "UNKNOWN",
+      "confidence": "UNKNOWN",
+      "explorer_url": "https://etherscan.io/tx/0xhash_victim_to_a"
+    },
+    {
+      "hop": null,
+      "from": "0xaaa111aaa111aaa111aaa111aaa111aaa111aaa1",
+      "to": "0xbbb222bbb222bbb222bbb222bbb222bbb222bbb2",
+      "amount": 20.0,
+      "asset": "ETH",
+      "traceable_amount": 0.0,
+      "unclassified_amount": 20.0,
+      "tx_hash": "0xhash_a_to_b",
+      "timestamp": "2024-06-01T10:00:00Z",
+      "block": null,
+      "vasp": "UNKNOWN",
+      "confidence": "UNKNOWN",
+      "explorer_url": "https://etherscan.io/tx/0xhash_a_to_b"
+    },
+    {
+      "hop": null,
+      "from": "0xbbb222bbb222bbb222bbb222bbb222bbb222bbb2",
+      "to": "0xccc333ccc333ccc333ccc333ccc333ccc333ccc3",
+      "amount": 5.0,
+      "asset": "ETH",
+      "traceable_amount": 0.0,
+      "unclassified_amount": 5.0,
+      "tx_hash": "0xhash_b_to_c",
+      "timestamp": "2024-06-01T11:00:00Z",
+      "block": null,
+      "vasp": "Example Exchange",
+      "confidence": "HIGH",
+      "explorer_url": "https://etherscan.io/tx/0xhash_b_to_c"
+    }
+  ],
+  "report_url": "/reports/CASE-001.pdf",
+  "data_source": "cached"
+}
