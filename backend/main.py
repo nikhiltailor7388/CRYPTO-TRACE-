@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api import auth, cases, reports, routes, trace_impl
+from backend.services.sqlite_store import ensure_seed_users
 
 load_dotenv()
 
@@ -14,6 +15,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("cryptotrace")
 
 app = FastAPI(title="CryptoTrace - Backend Skeleton")
+
+ensure_seed_users()
 
 # Allow CORS for frontend dev server
 app.add_middleware(

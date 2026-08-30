@@ -5,6 +5,16 @@ import EvidenceTable from './components/EvidenceTable'
 
 const STORAGE_KEY = 'cryptotrace-auth'
 
+async function readJsonResponse(res: Response) {
+  const text = await res.text()
+  if (!text) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error('Server returned an invalid response. Make sure the backend is running and the browser is using the active frontend port.')
+  }
+}
+
 type AuthState = {
   token: string
   email: string
@@ -18,7 +28,7 @@ export default function App(){
     return raw ? JSON.parse(raw) : null
   })
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
-  const [authForm, setAuthForm] = useState({ email: 'demo@cryptotrace.test', password: 'Password123!', full_name: 'Demo Analyst' })
+  const [authForm, setAuthForm] = useState({ email: 'nikhiltailor7388@gmail.com', password: 'Password123!', full_name: 'Nikhil Tailor' })
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [caseList, setCaseList] = useState<any[]>([])
@@ -37,12 +47,13 @@ export default function App(){
   const loadCases = async (token: string) => {
     setCasesLoading(true)
     try {
-      const res = await fetch('/cases', { headers: { Authorization: `Bearer ${token}` } })
-      const payload = await res.json()
+      const res = await fetch('/cases', { headers: { Authorization: 'Bearer ' + token } })
+      const payload = await readJsonResponse(res)
       if (!res.ok) throw new Error(payload?.detail || 'Failed to load cases')
       setCaseList(payload.cases || [])
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
+      setAuthError(err.message || 'Failed to load case history')
     } finally {
       setCasesLoading(false)
     }
@@ -61,7 +72,7 @@ export default function App(){
           full_name: authForm.full_name,
         })
       })
-      const payload = await res.json()
+      const payload = await readJsonResponse(res)
       if (!res.ok) {
         throw new Error(payload?.detail || 'Authentication failed')
       }
@@ -76,8 +87,8 @@ export default function App(){
   const handleLoadCase = async (caseId: string) => {
     if (!auth?.token) return
     try {
-      const res = await fetch(`/cases/${caseId}`, { headers: { Authorization: `Bearer ${auth.token}` } })
-      const payload = await res.json()
+      const res = await fetch(`/cases/${caseId}`, { headers: { Authorization: 'Bearer ' + auth.token } })
+      const payload = await readJsonResponse(res)
       if (!res.ok) throw new Error(payload?.detail || 'Failed to load case')
       setData(payload)
     } catch (err) {
@@ -139,7 +150,7 @@ export default function App(){
                   <span className="eyebrow">Case history</span>
                   <h3>Saved investigations</h3>
                 </div>
-                {casesLoading ? <div className="empty-table">Loading…</div> : (
+                {casesLoading ? <div className="empty-table">Loading?</div> : (
                   caseList.length ? (
                     <div className="case-list">
                       {caseList.map((item) => (
@@ -176,11 +187,11 @@ export default function App(){
               ) : null}
               <div className="field-group">
                 <label>Password</label>
-                <input type="password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} placeholder="••••••••" />
+                <input type="password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} placeholder="????????" />
               </div>
               {authError ? <div className="error-banner">{authError}</div> : null}
               <button className="primary-btn" onClick={handleAuthSubmit} disabled={authLoading}>
-                {authLoading ? 'Please wait…' : authMode === 'login' ? 'Login' : 'Create account'}
+                {authLoading ? 'Please wait?' : authMode === 'login' ? 'Login' : 'Create account'}
               </button>
             </div>
           )}
@@ -229,7 +240,7 @@ export default function App(){
                 </div>
                 <div className="panel small-panel">
                   <span className="label">Fraudster candidate</span>
-                  <strong>{summary.fraudster ? summary.fraudster.slice(0, 12) + '…' : 'Unknown'}</strong>
+                  <strong>{summary.fraudster ? summary.fraudster.slice(0, 12) + '?' : 'Unknown'}</strong>
                 </div>
                 <div className="panel small-panel">
                   <span className="label">Graph hash</span>
@@ -262,24 +273,24 @@ export default function App(){
                 </div>
                 <div className="suspicious-path-box">
                   <span className="label">Suspicious path</span>
-                  <strong>{summary.suspiciousPath.length ? summary.suspiciousPath.join(' → ') : 'No definitive path found'}</strong>
+                  <strong>{summary.suspiciousPath.length ? summary.suspiciousPath.join(' ? ') : 'No definitive path found'}</strong>
                 </div>
               </div>
 
               <div className="panel graph-panel">
                 <div className="panel-header inline-header">
                   <span className="eyebrow">Flow graph</span>
-                  <h3>Address network</h3>
+                  <h3>Wallet relationship graph</h3>
                 </div>
-                <GraphView data={{...data.graph, wallets: data.wallets}} />
+                <GraphView data={data} />
               </div>
 
-              <div className="panel table-panel">
+              <div className="panel evidence-panel">
                 <div className="panel-header inline-header">
                   <span className="eyebrow">Evidence</span>
-                  <h3>Source transactions</h3>
+                  <h3>Trace evidence ledger</h3>
                 </div>
-                <EvidenceTable evidence={data.evidence} />
+                <EvidenceTable rows={data.evidence || []} />
               </div>
             </>
           )}

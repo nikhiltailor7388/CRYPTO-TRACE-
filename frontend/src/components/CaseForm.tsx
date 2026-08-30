@@ -31,73 +31,88 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
         target_wallet: targetWallet || networkWallets[networkWallets.length - 1],
         max_hops: maxHops,
       }
-     const res = await fetch('/trace', {
-       method:'POST',
-       headers:{'Content-Type':'application/json', ...(authToken ? {'Authorization': `Bearer ${authToken}`} : {})},
-       body: JSON.stringify(payload)
-     })
-     const j = await res.json()
-     if (!res.ok) {
-       throw new Error(j?.detail || 'Trace request failed')
-     }
-     onResult(j)
-   } catch (err:any) {
-     setError(err.message || 'Trace failed')
-   } finally {
-     setLoading(false)
-   }
- }
 
- return (
-   <div className="form-panel-inner">
-     <div className="panel-header">
-       <span className="eyebrow">Investigation</span>
-       <h2>Trace wallet</h2>
-     </div>
+      const res = await fetch('/trace', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: 'Bearer ' + authToken } : {}),
+        },
+        body: JSON.stringify(payload),
+      })
 
-     <div className="field-group">
-       <label>Case ID</label>
-       <input value={caseId} onChange={e=>setCaseId(e.target.value)} placeholder="INV-001" />
-     </div>
+      const textBody = await res.text()
+      if (!textBody) {
+        throw new Error('Backend returned an empty response. Check whether the API server is running.')
+      }
 
-     <div className="field-group">
-       <label>Reported wallet</label>
-       <input value={sourceWallet} onChange={e=>setSourceWallet(e.target.value)} placeholder="0x..." />
-     </div>
+      let j
+      try {
+        j = JSON.parse(textBody)
+      } catch {
+        throw new Error('Server returned an invalid response. Check the backend and the active frontend port.')
+      }
 
-     <div className="field-group">
-       <label>Destination wallet</label>
-       <input value={targetWallet} onChange={e=>setTargetWallet(e.target.value)} placeholder="0x..." />
-     </div>
+      if (!res.ok) {
+        throw new Error(j?.detail || 'Trace request failed')
+      }
+      onResult(j)
+    } catch (err:any) {
+      setError(err.message || 'Trace failed')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-     <div className="field-group">
-       <label>Wallet cluster</label>
-       <textarea value={walletCluster} onChange={e=>setWalletCluster(e.target.value)} rows={3} placeholder="0x...
-0x..." />
-     </div>
+  return (
+    <div className="form-panel-inner">
+      <div className="panel-header">
+        <span className="eyebrow">Investigation</span>
+        <h2>Trace wallet</h2>
+      </div>
 
-     <div className="inline-fields">
-       <div className="field-group compact">
-         <label>Chain</label>
-         <select value={chain} onChange={e=>setChain(e.target.value)}>
-           <option value="ETH">ETH</option>
-           <option value="BSC">BSC</option>
-           <option value="POLYGON">POLYGON</option>
-           <option value="BASE">BASE</option>
-         </select>
+      <div className="field-group">
+        <label>Case ID</label>
+        <input value={caseId} onChange={e=>setCaseId(e.target.value)} placeholder="INV-001" />
+      </div>
+
+      <div className="field-group">
+        <label>Reported wallet</label>
+        <input value={sourceWallet} onChange={e=>setSourceWallet(e.target.value)} placeholder="0x..." />
+      </div>
+
+      <div className="field-group">
+        <label>Destination wallet</label>
+        <input value={targetWallet} onChange={e=>setTargetWallet(e.target.value)} placeholder="0x..." />
+      </div>
+
+      <div className="field-group">
+        <label>Wallet cluster</label>
+        <textarea value={walletCluster} onChange={e=>setWalletCluster(e.target.value)} rows={3} placeholder="0x...\n0x..." />
+      </div>
+
+      <div className="inline-fields">
+        <div className="field-group compact">
+          <label>Chain</label>
+          <select value={chain} onChange={e=>setChain(e.target.value)}>
+            <option value="ETH">ETH</option>
+            <option value="BSC">BSC</option>
+            <option value="POLYGON">POLYGON</option>
+            <option value="BASE">BASE</option>
+          </select>
         </div>
 
-       <div className="field-group compact">
-         <label>Max hops</label>
-         <input type="number" min={1} max={3} value={maxHops} onChange={e=>setMaxHops(Number(e.target.value || 1))} />
-       </div>
-     </div>
+        <div className="field-group compact">
+          <label>Max hops</label>
+          <input type="number" min={1} max={3} value={maxHops} onChange={e=>setMaxHops(Number(e.target.value || 1))} />
+        </div>
+      </div>
 
-     {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner">{error}</div>}
 
-     <button className="primary-btn" onClick={handleTrace} disabled={loading}>
-       {loading ? 'Tracing…' : 'Trace wallet'}
-     </button>
-   </div>
- )
+      <button className="primary-btn" onClick={handleTrace} disabled={loading}>
+        {loading ? 'Tracing?' : 'Trace wallet'}
+      </button>
+    </div>
+  )
 }

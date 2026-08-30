@@ -31,7 +31,7 @@ def register(payload: RegisterRequest):
     if not payload.email or not payload.password:
         raise HTTPException(status_code=400, detail="Email and password are required")
     if get_user_by_email(payload.email):
-        raise HTTPException(status_code=409, detail="User already exists")
+        raise HTTPException(status_code=409, detail="User already exists. Please login instead.")
     user = create_user(payload.email, hash_password(payload.password), payload.full_name)
     token = create_token(user["id"], user["email"])
     return AuthResponse(token=token, email=user["email"], full_name=user["full_name"] or "")

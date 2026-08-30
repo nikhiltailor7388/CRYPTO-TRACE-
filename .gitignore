@@ -10,6 +10,7 @@ __pycache__/
 *.db
 *.sqlite3
 *.sqlite
+.vite/
 
 # Data caches (keep eth_cache.json and vasp_labels.json in repo for demo)
 # data/*.json

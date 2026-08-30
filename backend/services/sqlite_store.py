@@ -3,6 +3,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from backend.services.auth import hash_password
+
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "cryptotrace.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -125,6 +127,21 @@ def list_case_metadata(user_id: Optional[int] = None) -> List[Dict[str, Any]]:
         rows = conn.execute("SELECT case_id, user_id, created_at, updated_at FROM cases ORDER BY updated_at DESC").fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def ensure_demo_user(email: str = "demo@cryptotrace.test", password: str = "Password123!", full_name: str = "Demo Analyst") -> Dict[str, Any]:
+    init_db()
+    existing = get_user_by_email(email)
+    if existing:
+        return existing
+
+    user = create_user(email, hash_password(password), full_name)
+    return user if user else {"email": email, "full_name": full_name}
+
+
+def ensure_seed_users() -> None:
+    ensure_demo_user()
+    ensure_demo_user("nikhiltailor7388@gmail.com", "Password123!", "Nikhil Tailor")
 
 
 def count_users() -> int:
