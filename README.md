@@ -1,4 +1,4 @@
-# CryptoTrace I4C
+# CryptoTrace 
 
 Automated blockchain fund-flow tracing and VASP identification for cybercrime investigators. Given a victim-reported crypto wallet address, CryptoTrace automatically retrieves public blockchain transactions, traces the fund flow across a bounded number of hops, matches destination addresses against a curated VASP/exchange label dataset with explicit confidence levels, flags explainable risk patterns, and generates a structured investigation report — replacing hours of manual explorer-hopping with a single input.
 
