@@ -16,8 +16,8 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
   const handleTrace = async ()=>{
     const wallets = walletCluster.split(/[\n,]+/).map(v=>v.trim()).filter(Boolean)
     const networkWallets = Array.from(new Set([...(sourceWallet ? [sourceWallet] : []), ...(targetWallet ? [targetWallet] : []), ...wallets]))
-    if (!caseId.trim() || networkWallets.length === 0) {
-      setError('Enter a case ID and at least one valid Ethereum wallet address.')
+    if (networkWallets.length === 0) {
+      setError('Enter at least one valid wallet address (victim).')
       return
     }
 
@@ -26,7 +26,7 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
 
     try {
       const payload = {
-        case_id: caseId,
+        case_id: caseId || undefined,
         case_name: `Case ${caseId}`,
         chain,
         wallets: networkWallets,

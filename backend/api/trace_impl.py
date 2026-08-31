@@ -83,7 +83,12 @@ def trace(req: TraceRequest, request: Request):
         if not all_normalized:
             raise HTTPException(status_code=404, detail="No transaction data found for the provided wallet(s).")
 
+        import uuid, time
+
         G = build_graph_from_txs(all_normalized)
+
+        # Generate a case_id if none provided
+        generated_case_id = req.case_id if req.case_id else f"CASE-{int(time.time())}-{str(uuid.uuid4())[:8]}"
 
         # If a specific tx_hash is provided, prefer tracing from that transaction's affected addresses
         seed_addresses = list(wallet_targets)
@@ -99,6 +104,37 @@ def trace(req: TraceRequest, request: Request):
 
         nodes, edges = bfs_subgraph_from_graph(G, seed_addresses, req.max_hops)
         evidence, annotated = apply_fifo_attribution(all_normalized, seed_addresses)
+
+        # Compute wallet cluster and destination wallets (top recipients)
+        recipient_sums = {}
+        tx_counts = {}
+        for ev in evidence:
+            to = ev.get('to')
+            amt = float(ev.get('amount') or 0)
+            if not to:
+                continue
+            recipient_sums[to] = recipient_sums.get(to, 0.0) + amt
+            tx_counts[to] = tx_counts.get(to, 0) + 1
+
+        # Top destination wallets by total amount
+        sorted_recipients = sorted(recipient_sums.items(), key=lambda x: x[1], reverse=True)
+        destination_wallets = [addr for addr, _ in sorted_recipients[:5]]
+
+        wallet_cluster = list(nodes)
+
+        # Node roles and metrics
+        node_roles = {}
+        for n in wallet_cluster:
+            incoming = sum(float(ev.get('amount') or 0) for ev in evidence if ev.get('to') == n)
+            outgoing = sum(float(ev.get('amount') or 0) for ev in evidence if ev.get('from') == n)
+            node_roles[n] = {
+                'address': n,
+                'role': 'suspect' if n in wallet_targets else ('destination' if n in destination_wallets else 'intermediate'),
+                'incoming_total': round(incoming, 6),
+                'outgoing_total': round(outgoing, 6),
+                'tx_count_in': sum(1 for ev in evidence if ev.get('to') == n),
+                'tx_count_out': sum(1 for ev in evidence if ev.get('from') == n),
+            }
 
         vasp_labels = load_vasp_labels()
         for e in evidence:
@@ -128,11 +164,11 @@ def trace(req: TraceRequest, request: Request):
             risk_score = round(min(99, max(15, (unclassified_value / total_value) * 100)))
 
         risk_profile = calculate_multilayer_probability(evidence, wallet_targets)
-        graph_hash = build_graph_hash(req.case_id, wallet_targets, evidence)
+        graph_hash = build_graph_hash(generated_case_id, wallet_targets, evidence)
         graph_metrics = summarize_graph(G, wallet_targets)
 
         response = {
-            "case_id": req.case_id,
+            "case_id": generated_case_id,
             "status": "complete",
             "wallets": [{"address": w, "role": "suspect"} for w in wallet_targets],
             "source_wallet": req.source_wallet or (req.address if req.address else None),
@@ -163,15 +199,18 @@ def trace(req: TraceRequest, request: Request):
             "graph_hash": graph_hash,
             "vasp_matches": list(unique_vasp.values()),
             "evidence": evidence,
-            "report_url": f"/reports/{req.case_id}.pdf",
-            "csv_report_url": f"/reports/{req.case_id}.csv",
+            "destination_wallets": destination_wallets,
+            "wallet_cluster": wallet_cluster,
+            "node_roles": node_roles,
+            "report_url": f"/reports/{generated_case_id}.pdf",
+            "csv_report_url": f"/reports/{generated_case_id}.csv",
             "data_source": "live" if use_eth and not demo_mode else "cached",
             "fallback_used": demo_mode and (not use_eth or not api_key),
         }
 
         try:
             from backend.services.persistence import save_case
-            save_case(req.case_id, response, user_id=user_id)
+            save_case(generated_case_id, response, user_id=user_id)
         except Exception:
             pass
         return response
