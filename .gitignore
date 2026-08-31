@@ -12,8 +12,14 @@ __pycache__/
 *.sqlite
 .vite/
 
-# Data caches (keep eth_cache.json and vasp_labels.json in repo for demo)
-# data/*.json
+# Demo data required for running the app without external APIs
+# eth_cache.json = fallback blockchain data when Etherscan API is unavailable
+# backend/data/vasp_labels.json = VASP/exchange address labels for AML
+# (do NOT commit generated outputs or report files)
+
+# Generated case snapshots and reports (ignored)
+backend/data/cases/*.json
+backend/reports/
 
 # Node / frontend
 node_modules/

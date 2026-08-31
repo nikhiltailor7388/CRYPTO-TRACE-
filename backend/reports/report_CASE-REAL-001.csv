@@ -1,4 +1,0 @@
-tx_hash,from,to,amount,asset,traceable_amount,unclassified_amount,timestamp,vasp,confidence,chain
-0xhash_victim_to_a,0xvictim,0xaaa111aaa111aaa111aaa111aaa111aaa111aaa1,10.0,ETH,0.0,10.0,2024-06-01T09:00:00Z,UNKNOWN,UNKNOWN,ETH
-0xhash_a_to_b,0xaaa111aaa111aaa111aaa111aaa111aaa111aaa1,0xbbb222bbb222bbb222bbb222bbb222bbb222bbb2,20.0,ETH,0.0,20.0,2024-06-01T10:00:00Z,UNKNOWN,UNKNOWN,ETH
-0xhash_b_to_c,0xbbb222bbb222bbb222bbb222bbb222bbb222bbb2,0xccc333ccc333ccc333ccc333ccc333ccc333ccc3,5.0,ETH,0.0,5.0,2024-06-01T11:00:00Z,Example Exchange,HIGH,ETH
