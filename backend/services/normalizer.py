@@ -40,3 +40,51 @@ def normalize_etherscan_raw(raw_txs: List[Dict[str, Any]]) -> List[Dict[str, Any
             'source_url': f"https://etherscan.io/tx/{tx_hash}" if tx_hash else None
         })
     return out
+
+
+def normalize_tron_raw(raw_txs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Convert TronScan raw responses into the same internal schema used by tracing."""
+    out = []
+    for r in raw_txs:
+        tx_hash = r.get('hash') or r.get('tx_hash')
+        frm = r.get('ownerAddress') or r.get('from')
+        raw_to = r.get('toAddress') or r.get('to')
+        if isinstance(r.get('toAddressList'), list) and r.get('toAddressList'):
+            first_to = r['toAddressList'][0]
+            if isinstance(first_to, dict):
+                raw_to = first_to.get('address') or raw_to
+        to = raw_to
+        val = r.get('amount')
+        try:
+            if val is not None and isinstance(val, (str, int, float)):
+                amt = float(val) / 1_000_000
+            else:
+                amt = float(r.get('amount', 0) or 0) / 1_000_000
+        except Exception:
+            amt = 0.0
+        ts = r.get('timestamp') or r.get('timeStamp')
+        if ts and isinstance(ts, (int, float)):
+            from datetime import datetime
+            ts_value = int(ts)
+            if ts_value > 1_000_000_000_000:
+                ts_value = ts_value // 1000
+            ts = datetime.utcfromtimestamp(ts_value).isoformat() + 'Z'
+        elif ts and str(ts).isdigit():
+            from datetime import datetime
+            ts_value = int(str(ts))
+            if ts_value > 1_000_000_000_000:
+                ts_value = ts_value // 1000
+            ts = datetime.utcfromtimestamp(ts_value).isoformat() + 'Z'
+        asset = (r.get('tokenInfo') or {}).get('symbol') or r.get('tokenSymbol') or 'TRX'
+        out.append({
+            'tx_hash': tx_hash,
+            'from': frm,
+            'to': to,
+            'amount': amt,
+            'asset': asset,
+            'timestamp': ts,
+            'block': int(r.get('block')) if r.get('block') is not None else None,
+            'chain': 'TRON',
+            'source_url': f"https://tronscan.org/#/transaction/{tx_hash}" if tx_hash else None
+        })
+    return out

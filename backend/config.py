@@ -11,7 +11,9 @@ load_dotenv(BASE_DIR / ".env")
 @dataclass(frozen=True)
 class Settings:
     etherscan_api_key: str = os.getenv("ETHERSCAN_API_KEY", "")
+    tronscan_api_key: str = os.getenv("TRONSCAN_API_KEY", "")
     use_etherscan: bool = os.getenv("USE_ETHERSCAN", "false").lower() in {"1", "true", "yes", "on"}
+    use_tronscan: bool = os.getenv("USE_TRONSCAN", "false").lower() in {"1", "true", "yes", "on"}
     demo_mode: bool = os.getenv("DEMO_MODE", "true").lower() in {"1", "true", "yes", "on"}
     request_timeout: int = int(os.getenv("REQUEST_TIMEOUT", "15"))
     max_retries: int = int(os.getenv("MAX_RETRIES", "3"))

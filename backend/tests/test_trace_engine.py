@@ -1,4 +1,48 @@
+from types import SimpleNamespace
+
 from backend.graph.trace_engine import bounded_trace, build_transaction_graph
+from backend.services.fetcher import fetch_transactions
+from backend.services.normalizer import normalize_tron_raw
+
+
+def test_tron_normalizer_handles_live_shape():
+    txs = [{
+        "hash": "trc123",
+        "ownerAddress": "TQn9Y2khJ5nY7UQ6qkV8M8T4nCz4fBfU5w9",
+        "toAddress": "TDdvqwbk2zeau23vzuPzenMWdb3h7Vsudu",
+        "amount": "1230000",
+        "timestamp": 1710000000,
+        "tokenInfo": {"symbol": "TRX"},
+    }]
+    normalized = normalize_tron_raw(txs)
+    assert normalized[0]["chain"] == "TRON"
+    assert normalized[0]["amount"] == 1.23
+    assert normalized[0]["asset"] == "TRX"
+
+
+def test_fetch_transactions_uses_tronscan_live_path(monkeypatch):
+    captured = {}
+
+    def fake_call_with_retry(fn, *args, **kwargs):
+        captured["fn"] = fn.__name__
+        return [{
+            "chain": "TRON",
+            "tx_hash": "trc456",
+            "from": "TQn9Y2khJ5nY7UQ6qkV8M8T4nCz4fBfU5w9",
+            "to": "TDdvqwbk2zeau23vzuPzenMWdb3h7Vsudu",
+            "amount": "2500000",
+            "timestamp": 1710000000,
+        }]
+
+    monkeypatch.setattr("backend.services.fetcher.call_with_retry", fake_call_with_retry)
+    monkeypatch.setattr(
+        "backend.services.fetcher.settings",
+        SimpleNamespace(tronscan_api_key="secret-key", max_retries=1, backoff_seconds=0),
+    )
+
+    results = fetch_transactions("TQn9Y2khJ5nY7UQ6qkV8M8T4nCz4fBfU5w9", use_cache=False, api_key="secret-key", chain="TRON")
+    assert results[0]["chain"] == "TRON"
+    assert captured["fn"] == "fetch_tron_transactions"
 
 
 def test_bounded_trace_stops_at_max_hops():

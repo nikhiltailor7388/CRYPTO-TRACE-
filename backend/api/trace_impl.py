@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from backend.config import settings
-from backend.services.address_validator import is_valid_eth_address
+from backend.services.address_validator import is_valid_eth_address, is_valid_tron_address
 from backend.services.attribution import apply_fifo_attribution
 from backend.graph.analytics import summarize_graph
 from backend.services.auth import decode_token, get_bearer_token
@@ -17,7 +17,7 @@ from backend.services.fraud_detector import (
 )
 from backend.graph.trace_engine import build_transaction_graph, bounded_trace
 from backend.services.graph_utils import bfs_subgraph_from_graph
-from backend.services.normalizer import normalize_etherscan_raw
+from backend.services.normalizer import normalize_etherscan_raw, normalize_tron_raw
 from backend.services.vasp_matcher import load_vasp_labels, match_vasp_for_address
 
 router = APIRouter()
@@ -60,20 +60,27 @@ def trace(req: TraceRequest, request: Request):
         if not wallet_targets:
             raise HTTPException(status_code=400, detail="Provide at least one wallet address to trace.")
 
-        invalid = [w for w in wallet_targets if w and not is_valid_eth_address(w)]
+        chain_name = str(req.chain or "ETH").upper().replace(" ", "_")
+        validator = is_valid_tron_address if chain_name.startswith("TRON") else is_valid_eth_address
+        invalid = [w for w in wallet_targets if w and not validator(w)]
         if invalid:
             raise HTTPException(status_code=400, detail=f"Invalid wallet address for {req.chain}: {invalid[0]}")
 
-        chain_name = str(req.chain or "ETH").upper().replace(" ", "_")
         all_normalized = []
         seen_hashes = set()
         use_eth = os.getenv("USE_ETHERSCAN", str(settings.use_etherscan)).lower() in ["1", "true", "yes"]
-        api_key = os.getenv("ETHERSCAN_API_KEY", settings.etherscan_api_key) or None
+        use_tron = os.getenv("USE_TRONSCAN", str(settings.use_tronscan)).lower() in ["1", "true", "yes"]
+        api_key = (
+            os.getenv("TRONSCAN_API_KEY", settings.tronscan_api_key)
+            if chain_name.startswith("TRON")
+            else os.getenv("ETHERSCAN_API_KEY", settings.etherscan_api_key)
+        ) or None
         demo_mode = os.getenv("DEMO_MODE", str(settings.demo_mode)).lower() in ["1", "true", "yes"]
 
         for w in wallet_targets:
-            raw = fetch_transactions(w, use_cache=demo_mode or (not use_eth), api_key=api_key, chain=chain_name)
-            normalized = normalize_etherscan_raw(raw)
+            use_live = use_tron if chain_name.startswith("TRON") else use_eth
+            raw = fetch_transactions(w, use_cache=demo_mode or (not use_live), api_key=api_key, chain=chain_name)
+            normalized = normalize_tron_raw(raw) if chain_name.startswith("TRON") else normalize_etherscan_raw(raw)
             for tx in normalized:
                 tx_hash = tx.get("tx_hash")
                 if not tx_hash or tx_hash in seen_hashes:
@@ -154,7 +161,10 @@ def trace(req: TraceRequest, request: Request):
             match = match_vasp_for_address(e["to"], vasp_labels)
             e["vasp"] = match.get("entity") if match else "UNKNOWN"
             e["confidence"] = match.get("confidence") if match else "UNKNOWN"
-            e["explorer_url"] = f"https://etherscan.io/tx/{e.get('tx_hash')}"
+            if chain_name.startswith("TRON"):
+                e["explorer_url"] = f"https://tronscan.org/#/transaction/{e.get('tx_hash')}"
+            else:
+                e["explorer_url"] = f"https://etherscan.io/tx/{e.get('tx_hash')}"
             e["source"] = match.get("source") if match else "public blockchain"
             e["source_date"] = match.get("source_date") if match else None
 
@@ -183,10 +193,10 @@ def trace(req: TraceRequest, request: Request):
 
         sources = [
             {
-                "name": "Etherscan V2 API" if use_eth else "Cached demo fixture",
-                "url": "https://api.etherscan.io/v2/api" if use_eth else None,
+                "name": "TronScan API" if chain_name.startswith("TRON") else "Etherscan V2 API" if use_eth else "Cached demo fixture",
+                "url": "https://apilist.tronscanapi.com/api/transaction" if chain_name.startswith("TRON") else "https://api.etherscan.io/v2/api" if use_eth else None,
                 "chain": chain_name,
-                "live_fetch": use_eth and not demo_mode,
+                "live_fetch": (use_tron if chain_name.startswith("TRON") else use_eth) and not demo_mode,
             }
         ]
         limitations = [
@@ -240,8 +250,8 @@ def trace(req: TraceRequest, request: Request):
             "limitations": limitations,
             "report_url": f"/reports/{generated_case_id}.pdf",
             "csv_report_url": f"/reports/{generated_case_id}.csv",
-            "data_source": "live" if use_eth and not demo_mode else "cached",
-            "fallback_used": demo_mode and (not use_eth or not api_key),
+            "data_source": "live" if ((use_tron if chain_name.startswith("TRON") else use_eth) and not demo_mode) else "cached",
+            "fallback_used": demo_mode and (not ((use_tron if chain_name.startswith("TRON") else use_eth)) or not api_key),
         }
 
         try:
