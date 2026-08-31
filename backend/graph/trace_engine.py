@@ -1,4 +1,3 @@
-from collections import deque
 from typing import Iterable, List, Tuple
 
 import networkx as nx
@@ -26,35 +25,57 @@ def build_transaction_graph(transactions: Iterable[dict]) -> nx.DiGraph:
     return graph
 
 
-def bounded_trace(graph: nx.DiGraph, start_wallets: List[str], max_hops: int = 3):
-    """Follow the largest outbound edge at each hop, bounded by max_hops. Returns nodes and edges."""
-    visited = set()
-    frontier = deque((w.lower() for w in start_wallets if w))
-    nodes = set(frontier)
-    edges = []
-    for _ in range(max_hops):
-        if not frontier:
-            break
-        next_frontier = deque()
-        while frontier:
-            node = frontier.popleft()
-            if node in visited:
-                continue
-            visited.add(node)
-            if node not in graph:
-                continue
-            successors = list(graph.successors(node))
+def bounded_trace(
+    graph: nx.DiGraph, start_wallets: List[str], max_hops: int = 3
+) -> Tuple[List[str], List[Tuple], List[str]]:
+    """Follow the largest outbound edge at each hop, bounded by max_hops.
+
+    At each hop, from each current frontier node, the single successor
+    with the largest edge ``amount`` is followed.  Traversal stops at
+    ``max_hops``, at dead-ends, or when no successor exists.
+
+    Returns ``(nodes, edges, path)`` where:
+      - ``nodes`` — sorted list of every wallet encountered within the hop bound.
+      - ``edges`` — list of ``(from, to, amount, tx_hash)`` tuples for traversed edges.
+      - ``path``  — ordered list of wallets forming the traced fund-flow chain
+                    (start wallet → largest successor → …).
+    """
+    nodes: set = set()
+    edges: List[Tuple] = []
+    path: List[str] = []
+
+    start_lower = [s.lower() for s in start_wallets if s]
+    nodes.update(start_lower)
+
+    for start in start_lower:
+        if start not in path:
+            path.append(start)
+        current = start
+        for _ in range(max_hops):
+            if current not in graph:
+                break
+            successors = list(graph.successors(current))
             if not successors:
-                continue
+                break
+            best_succ = None
+            best_amount = -1.0
+            best_data: dict = {}
             for succ in successors:
-                data = graph.get_edge_data(node, succ)
+                data = graph.get_edge_data(current, succ)
                 if not isinstance(data, dict):
                     continue
                 amount = float(data.get("amount") or 0.0)
-                nodes.add(node)
-                nodes.add(succ)
-                edges.append((node, succ, amount, data.get("tx_hash")))
-                if succ not in visited:
-                    next_frontier.append(succ)
-        frontier = next_frontier
-    return sorted(nodes), edges
+                if amount > best_amount:
+                    best_amount = amount
+                    best_succ = succ
+                    best_data = data
+            if best_succ is None:
+                break
+            nodes.add(best_succ)
+            tx_hash = best_data.get("tx_hash")
+            edges.append((current, best_succ, best_amount, tx_hash))
+            if best_succ not in path:
+                path.append(best_succ)
+            current = best_succ
+
+    return sorted(nodes), edges, path

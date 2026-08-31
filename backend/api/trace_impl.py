@@ -15,7 +15,7 @@ from backend.services.fraud_detector import (
     calculate_multilayer_probability,
     identify_suspicious_path,
 )
-from backend.services.graph_utils import bfs_subgraph_from_graph, build_graph_from_txs
+from backend.graph.trace_engine import build_transaction_graph, bounded_trace
 from backend.services.normalizer import normalize_etherscan_raw
 from backend.services.vasp_matcher import load_vasp_labels, match_vasp_for_address
 
@@ -80,9 +80,23 @@ def trace(req: TraceRequest, request: Request):
         if not all_normalized:
             raise HTTPException(status_code=404, detail="No transaction data found for the provided wallet(s).")
 
-        G = build_graph_from_txs(all_normalized)
-        nodes, edges = bfs_subgraph_from_graph(G, wallet_targets, req.max_hops)
-        evidence, annotated = apply_fifo_attribution(all_normalized, wallet_targets)
+        G = build_transaction_graph(all_normalized)
+        traced_nodes, traced_edges, trace_path = bounded_trace(G, wallet_targets, req.max_hops)
+
+        full_evidence, annotated = apply_fifo_attribution(all_normalized, wallet_targets)
+
+        traced_edge_set = {(e[0], e[1]) for e in traced_edges}
+
+        edge_to_hop = {}
+        for i in range(len(trace_path) - 1):
+            edge_to_hop[(trace_path[i], trace_path[i + 1])] = i + 1
+
+        evidence = []
+        for e in full_evidence:
+            key = (e.get("from"), e.get("to"))
+            if key in traced_edge_set:
+                e["hop"] = edge_to_hop.get(key)
+                evidence.append(e)
 
         vasp_labels = load_vasp_labels()
         for e in evidence:
@@ -115,6 +129,22 @@ def trace(req: TraceRequest, request: Request):
         graph_hash = build_graph_hash(req.case_id, wallet_targets, evidence)
         graph_metrics = summarize_graph(G, wallet_targets)
 
+        sources = [
+            {
+                "name": "Etherscan V2 API" if use_eth else "Cached demo fixture",
+                "url": "https://api.etherscan.io/v2/api" if use_eth else None,
+                "chain": chain_name,
+                "live_fetch": use_eth and not demo_mode,
+            }
+        ]
+        limitations = [
+            "Public blockchain data only — no private KYC, bank, or government records accessed.",
+            "VASP attribution is source-backed exact matching; UNKNOWN means no labelled match, not a negative result.",
+            "FIFO attribution is conservative — traceable amounts under-count mixing/consolidation.",
+            "Tracing follows largest-value outbound edges (greedy), not probabilistic clustering.",
+            "Maximum hop depth is bounded to %d hops per configured limit." % req.max_hops,
+        ]
+
         response = {
             "case_id": req.case_id,
             "status": "complete",
@@ -139,11 +169,17 @@ def trace(req: TraceRequest, request: Request):
                 "risk_factors": risk_profile.get("risk_factors", []),
                 "suspicious_path": identify_suspicious_path(evidence, wallet_targets),
             },
-            "graph": {"nodes": list(nodes), "edges": list(edges)},
+            "trace": {
+                "path": trace_path,
+                "hop_count": len(traced_edges),
+            },
+            "graph": {"nodes": list(traced_nodes), "edges": [(e[0], e[1], e[3]) for e in traced_edges]},
             "graph_metrics": graph_metrics,
             "graph_hash": graph_hash,
             "vasp_matches": list(unique_vasp.values()),
             "evidence": evidence,
+            "sources": sources,
+            "limitations": limitations,
             "report_url": f"/reports/{req.case_id}.pdf",
             "csv_report_url": f"/reports/{req.case_id}.csv",
             "data_source": "live" if use_eth and not demo_mode else "cached",
