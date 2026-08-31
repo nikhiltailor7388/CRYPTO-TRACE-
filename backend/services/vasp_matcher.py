@@ -31,10 +31,18 @@ def load_vasp_labels():
     return {}
 
 
-def match_vasp_for_address(address: str, vasp_labels: dict):
+def match_vasp_for_address(address: str, vasp_labels: dict, chain: str = None):
     if not address:
         return None
     key = str(address).lower().strip()
     if not key:
         return None
-    return vasp_labels.get(key)
+    match = vasp_labels.get(key)
+    if not match:
+        return None
+    if chain and match.get("chain"):
+        requested_chain = str(chain).upper().replace(" ", "_")
+        label_chain = str(match["chain"]).upper().replace(" ", "_")
+        if requested_chain != label_chain:
+            return None
+    return match

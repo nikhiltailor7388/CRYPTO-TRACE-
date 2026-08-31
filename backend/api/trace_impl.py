@@ -158,7 +158,7 @@ def trace(req: TraceRequest, request: Request):
 
         vasp_labels = load_vasp_labels()
         for e in evidence:
-            match = match_vasp_for_address(e["to"], vasp_labels)
+            match = match_vasp_for_address(e["to"], vasp_labels, chain=chain_name)
             e["vasp"] = match.get("entity") if match else "UNKNOWN"
             e["confidence"] = match.get("confidence") if match else "UNKNOWN"
             if chain_name.startswith("TRON"):

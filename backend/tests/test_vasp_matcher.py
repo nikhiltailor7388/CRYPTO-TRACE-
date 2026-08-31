@@ -11,3 +11,8 @@ def test_exact_match_case_insensitive():
 def test_no_match_returns_none():
     labels = load_vasp_labels()
     assert match_vasp_for_address("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", labels) is None
+
+
+def test_chain_mismatch_returns_none():
+    labels = load_vasp_labels()
+    assert match_vasp_for_address("0xccc333ccc333ccc333ccc333ccc333ccc333ccc3", labels, chain="TRON") is None
