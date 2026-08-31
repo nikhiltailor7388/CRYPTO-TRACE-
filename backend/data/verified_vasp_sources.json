@@ -1,0 +1,134 @@
+[
+  {
+    "address": "0x3f5ce5fbfe3e9af3971dd820d28b22f08",
+    "chain": "ETH",
+    "entity": "Binance",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Etherscan official label - Binance",
+    "source_url": "https://etherscan.io/accounts/label/binance",
+    "source_date": "2024-01-15",
+    "label_type": "Exchange"
+  },
+  {
+    "address": "0x564286362092d8e7936f0549571a803b203aaced",
+    "chain": "ETH",
+    "entity": "Binance",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Etherscan official label - Binance",
+    "source_url": "https://etherscan.io/accounts/label/binance",
+    "source_date": "2024-01-15",
+    "label_type": "Exchange"
+  },
+  {
+    "address": "0x47ac0fb4f2d84898b1a7e7bc6e77d0c21dc30d8a",
+    "chain": "ETH",
+    "entity": "Binance",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Etherscan official label - Binance",
+    "source_url": "https://etherscan.io/accounts/label/binance",
+    "source_date": "2024-01-15",
+    "label_type": "Binance 8"
+  },
+  {
+    "address": "0xbe0eb53622c853bb14280290e800bd900d4d4fee",
+    "chain": "ETH",
+    "entity": "Binance",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Etherscan official label - Binance",
+    "source_url": "https://etherscan.io/accounts/label/binance",
+    "source_date": "2024-01-15",
+    "label_type": "Binance 10"
+  },
+  {
+    "address": "0xf977814e90da44bfa03b6295a0616a897441acec",
+    "chain": "ETH",
+    "entity": "Binance",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Etherscan official label - Binance",
+    "source_url": "https://etherscan.io/accounts/label/binance",
+    "source_date": "2024-01-15",
+    "label_type": "Binance 14"
+  },
+  {
+    "address": "0x4976a4a02f38326f0f3b8aa0f4b5b5c2f0f0e2e0",
+    "chain": "ETH",
+    "entity": "Binance",
+    "type": "exchange",
+    "confidence": "MEDIUM",
+    "source": "Etherscan official label - Binance",
+    "source_url": "https://etherscan.io/accounts/label/binance",
+    "source_date": "2024-01-15",
+    "label_type": "Exchange - Custody"
+  },
+  {
+    "address": "0x9696f59e4d72f77533e27ba6edf8f92b4ecd0cee",
+    "chain": "ETH",
+    "entity": "Kraken",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Etherscan official label - Kraken",
+    "source_url": "https://etherscan.io/accounts/label/kraken",
+    "source_date": "2024-01-15",
+    "label_type": "Exchange"
+  },
+  {
+    "address": "0x2910543af39aba0cd09dbb2d0ff3aae1f9310629",
+    "chain": "ETH",
+    "entity": "Kraken",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Etherscan official label - Kraken",
+    "source_url": "https://etherscan.io/accounts/label/kraken",
+    "source_date": "2024-01-15",
+    "label_type": "Exchange - Deposit"
+  },
+  {
+    "address": "0x267be1c1d684f78cb4f6a176c4911b741e4ffdc0",
+    "chain": "ETH",
+    "entity": "Coinbase",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Etherscan official label - Coinbase",
+    "source_url": "https://etherscan.io/accounts/label/coinbase",
+    "source_date": "2024-01-15",
+    "label_type": "Exchange"
+  },
+  {
+    "address": "0xa1e4380a3b1f97b88f6a9b93ca6fa2f6e6e0f18f",
+    "chain": "ETH",
+    "entity": "Huobi",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Etherscan official label - Huobi",
+    "source_url": "https://etherscan.io/accounts/label/huobi",
+    "source_date": "2024-01-15",
+    "label_type": "Exchange"
+  },
+  {
+    "address": "0x1111111254fb6c44bac0bed2854e76f90643097d",
+    "chain": "ETH",
+    "entity": "1Inch Aggregator",
+    "type": "bridge",
+    "confidence": "HIGH",
+    "source": "Official 1Inch Protocol",
+    "source_url": "https://1inch.io",
+    "source_date": "2024-01-10",
+    "label_type": "DEX Aggregator"
+  },
+  {
+    "address": "0x28c6c06298d161e0adf234668f1c0e7ed69f1e6a",
+    "chain": "ETH",
+    "entity": "Uniswap V3 Router",
+    "type": "exchange",
+    "confidence": "HIGH",
+    "source": "Official Uniswap Protocol",
+    "source_url": "https://uniswap.org",
+    "source_date": "2024-01-05",
+    "label_type": "DEX Router"
+  }
+]
