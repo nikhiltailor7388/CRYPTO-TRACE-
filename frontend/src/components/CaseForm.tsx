@@ -3,7 +3,6 @@ import React, {useState} from 'react'
 export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>void, authToken?:string}){
   const [sourceWallet, setSourceWallet] = useState('')
   const [targetWallet, setTargetWallet] = useState('')
-  const [walletCluster, setWalletCluster] = useState('')
   const [caseId, setCaseId] = useState('INV-001')
   const [chain, setChain] = useState('ETH')
   const [txHash, setTxHash] = useState('')
@@ -14,8 +13,7 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
   const [error, setError] = useState('')
 
   const handleTrace = async ()=>{
-    const wallets = walletCluster.split(/[\n,]+/).map(v=>v.trim()).filter(Boolean)
-    const networkWallets = Array.from(new Set([...(sourceWallet ? [sourceWallet] : []), ...(targetWallet ? [targetWallet] : []), ...wallets]))
+    const networkWallets = Array.from(new Set([...(sourceWallet ? [sourceWallet] : []), ...(targetWallet ? [targetWallet] : [])]))
     if (networkWallets.length === 0) {
       setError('Enter at least one valid wallet address (victim).')
       return
@@ -90,11 +88,6 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
       <div className="field-group">
         <label>Destination wallet</label>
         <input value={targetWallet} onChange={e=>setTargetWallet(e.target.value)} placeholder="0x..." />
-      </div>
-
-      <div className="field-group">
-        <label>Wallet cluster</label>
-        <textarea value={walletCluster} onChange={e=>setWalletCluster(e.target.value)} rows={3} placeholder="0x...\n0x..." />
       </div>
 
       <div className="field-group">
