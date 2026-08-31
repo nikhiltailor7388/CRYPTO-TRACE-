@@ -57,7 +57,9 @@ def normalize_tron_raw(raw_txs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         val = r.get('amount')
         try:
             if val is not None and isinstance(val, (str, int, float)):
-                amt = float(val) / 1_000_000
+                # Cached fixtures already use the internal unit; TronScan raw
+                # records use integer base units alongside ownerAddress.
+                amt = float(val) if 'from' in r or 'tx_hash' in r else float(val) / 1_000_000
             else:
                 amt = float(r.get('amount', 0) or 0) / 1_000_000
         except Exception:

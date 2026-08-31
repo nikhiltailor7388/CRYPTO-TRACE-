@@ -41,6 +41,20 @@ DEMO_MODE=false
 - Review the traced path, VASP label, and risk layer output.
 - Download the generated PDF report.
 
+## Demo and validation
+
+Follow [DEMO_SCRIPT.md](./DEMO_SCRIPT.md) for the reproducible ETH, TRON,
+multi-wallet, and report walkthrough using the existing real fixtures.
+
+Current validation:
+
+- Backend suite: 21 tests passed; one existing TRON datetime deprecation warning.
+- Frontend production build: passed with `npm run build`.
+- ETH and TRON `/trace`: verified with non-zero real fixture values.
+- PDF and CSV report endpoints: verified with HTTP 200 responses.
+- Cross-chain bridge tracing: not implemented by the current backend.
+- Separate backup demo case: not available; no fabricated or duplicated case is used.
+
 ## Scope
 
 This is an investigative evidence prototype built for public blockchain analysis. It does not claim private KYC access or definitive criminal attribution.

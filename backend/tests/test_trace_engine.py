@@ -1,8 +1,65 @@
+import json
+from pathlib import Path
 from types import SimpleNamespace
 
 from backend.graph.trace_engine import bounded_trace, build_transaction_graph
 from backend.services.fetcher import fetch_transactions
-from backend.services.normalizer import normalize_tron_raw
+from backend.services.normalizer import normalize_etherscan_raw, normalize_tron_raw
+
+DATA_DIR = Path(__file__).resolve().parents[1] / "data"
+
+
+def test_eth_demo_fixture_is_real_and_normalizable():
+    with open(DATA_DIR / "eth_cache.json", "r", encoding="utf-8") as fh:
+        rows = json.load(fh)
+    assert len(rows) >= 3
+    assert rows[0]["chain"] == "ETH"
+    normalized = normalize_etherscan_raw(rows)
+    assert normalized[0]["tx_hash"] == rows[0]["tx_hash"]
+    assert normalized[0]["amount"] > 0
+
+
+def test_tron_demo_fixture_is_real_and_normalizable():
+    with open(DATA_DIR / "tron_cache.json", "r", encoding="utf-8") as fh:
+        rows = json.load(fh)
+    assert len(rows) >= 3
+    assert rows[0]["chain"] == "TRON"
+    normalized = normalize_tron_raw(rows)
+    assert normalized[0]["tx_hash"] == rows[0]["tx_hash"]
+    assert normalized[0]["amount"] > 0
+    assert normalized[1]["amount"] == rows[1]["amount"]
+
+
+def test_fetch_transactions_falls_back_to_eth_demo_fixture(monkeypatch):
+    monkeypatch.setattr("backend.services.fetcher.settings", SimpleNamespace(etherscan_api_key="", tronscan_api_key="", max_retries=1, backoff_seconds=0))
+    rows = fetch_transactions("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", use_cache=False, api_key="", chain="ETH")
+    assert len(rows) >= 3
+    assert all(r.get("chain") == "ETH" for r in rows)
+
+
+def test_fetch_transactions_falls_back_to_tron_demo_fixture(monkeypatch):
+    monkeypatch.setattr("backend.services.fetcher.settings", SimpleNamespace(etherscan_api_key="", tronscan_api_key="", max_retries=1, backoff_seconds=0))
+    rows = fetch_transactions("TTqHYntf2ZFjZo1JJjRsTAMvUjJfttNEYM", use_cache=False, api_key="", chain="TRON")
+    assert rows
+    assert all(r.get("chain") == "TRON" for r in rows)
+    assert all(
+        "TTqHYntf2ZFjZo1JJjRsTAMvUjJfttNEYM" in (r.get("from"), r.get("to"))
+        for r in rows
+    )
+
+
+def test_cached_fallback_does_not_return_unrelated_wallet_data(monkeypatch):
+    monkeypatch.setattr(
+        "backend.services.fetcher.settings",
+        SimpleNamespace(etherscan_api_key="", tronscan_api_key="", max_retries=1, backoff_seconds=0),
+    )
+    rows = fetch_transactions(
+        "0x0000000000000000000000000000000000000001",
+        use_cache=False,
+        api_key="",
+        chain="ETH",
+    )
+    assert rows == []
 
 
 def test_tron_normalizer_handles_live_shape():

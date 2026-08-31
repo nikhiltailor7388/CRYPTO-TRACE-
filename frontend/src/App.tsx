@@ -28,7 +28,7 @@ export default function App(){
     return raw ? JSON.parse(raw) : null
   })
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
-  const [authForm, setAuthForm] = useState({ email: 'nikhiltailor7388@gmail.com', password: 'Password123!', full_name: 'Nikhil Tailor' })
+  const [authForm, setAuthForm] = useState({ email: '', password: '', full_name: '' })
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [caseList, setCaseList] = useState<any[]>([])
@@ -98,13 +98,21 @@ export default function App(){
 
   const summary = useMemo(() => {
     const evidence = data?.evidence || []
-    const totalValue = evidence.reduce((sum:any, row:any) => sum + Number(row.amount || 0), 0)
-    const traceable = evidence.reduce((sum:any, row:any) => sum + Number(row.traceable_amount || 0), 0)
-    const unclassified = evidence.reduce((sum:any, row:any) => sum + Number(row.unclassified_amount || 0), 0)
+    const asset = evidence[0]?.asset || (data?.chain?.toUpperCase().startsWith('TRON') ? 'TRX' : 'ETH')
+    const backendSummary = data?.summary || {}
+    const evidenceTotals = evidence.reduce((totals:any, row:any) => ({
+      total: totals.total + Number(row.amount || 0),
+      traceable: totals.traceable + Number(row.traceable_amount || 0),
+      unclassified: totals.unclassified + Number(row.unclassified_amount || 0),
+    }), {total: 0, traceable: 0, unclassified: 0})
+    const displayValue = (key:string, fallback:number) => {
+      const value = Number(backendSummary[key])
+      return value > 0 || fallback === 0 ? value : fallback
+    }
     return {
-      totalValue,
-      traceable,
-      unclassified,
+      totalValue: displayValue('total_value', evidenceTotals.total),
+      traceable: displayValue('traceable_value', evidenceTotals.traceable),
+      unclassified: displayValue('unclassified_value', evidenceTotals.unclassified),
       vaspMatches: data?.vasp_matches?.length || 0,
       riskScore: data?.summary?.fraud_probability ?? data?.summary?.risk_score ?? 0,
       probability: data?.risk_profile?.overall_probability ?? data?.summary?.fraud_probability ?? data?.summary?.risk_score ?? 0,
@@ -115,6 +123,8 @@ export default function App(){
       suspiciousPath: data?.risk_profile?.suspicious_path || [],
       riskFactors: data?.risk_profile?.risk_factors || [],
       graphMetrics: data?.graph_metrics || {node_count: 0, edge_count: 0, max_degree: 0},
+      asset,
+      chain: data?.chain || 'ETH',
     }
   }, [data])
 
@@ -150,7 +160,7 @@ export default function App(){
                   <span className="eyebrow">Case history</span>
                   <h3>Saved investigations</h3>
                 </div>
-                {casesLoading ? <div className="empty-table">Loading?</div> : (
+                {casesLoading ? <div className="empty-table">Loading saved investigations…</div> : (
                   caseList.length ? (
                     <div className="case-list">
                       {caseList.map((item) => (
@@ -187,11 +197,11 @@ export default function App(){
               ) : null}
               <div className="field-group">
                 <label>Password</label>
-                <input type="password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} placeholder="????????" />
+                <input type="password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} placeholder="Your password" />
               </div>
               {authError ? <div className="error-banner">{authError}</div> : null}
               <button className="primary-btn" onClick={handleAuthSubmit} disabled={authLoading}>
-                {authLoading ? 'Please wait?' : authMode === 'login' ? 'Login' : 'Create account'}
+              {authLoading ? 'Please wait…' : authMode === 'login' ? 'Login' : 'Create account'}
               </button>
             </div>
           )}
@@ -213,15 +223,15 @@ export default function App(){
               <div className="stats-grid">
                 <div className="stat-card panel">
                   <span className="label">Total value</span>
-                  <strong>{summary.totalValue.toFixed(3)} ETH</strong>
+                  <strong>{summary.totalValue.toLocaleString(undefined, {maximumFractionDigits: 8})} {summary.asset}</strong>
                 </div>
                 <div className="stat-card panel">
                   <span className="label">Traceable</span>
-                  <strong>{summary.traceable.toFixed(3)} ETH</strong>
+                  <strong>{summary.traceable.toLocaleString(undefined, {maximumFractionDigits: 8})} {summary.asset}</strong>
                 </div>
                 <div className="stat-card panel">
                   <span className="label">Unclassified</span>
-                  <strong>{summary.unclassified.toFixed(3)} ETH</strong>
+                  <strong>{summary.unclassified.toLocaleString(undefined, {maximumFractionDigits: 8})} {summary.asset}</strong>
                 </div>
                 <div className="stat-card panel accent-card">
                   <span className="label">Fraud probability</span>
@@ -240,22 +250,26 @@ export default function App(){
                 </div>
                 <div className="panel small-panel">
                   <span className="label">Fraudster candidate</span>
-                  <strong>{summary.fraudster ? summary.fraudster.slice(0, 12) + '?' : 'Unknown'}</strong>
+                  <strong>{summary.fraudster ? summary.fraudster.slice(0, 12) + '…' : 'Unknown'}</strong>
                 </div>
                 <div className="panel small-panel">
                   <span className="label">Graph hash</span>
-                  <strong>{summary.graphHash.slice(0, 12)}</strong>
+                  <strong>{summary.graphHash.slice(0, 12)}…</strong>
                 </div>
                 <div className="panel small-panel">
                   <span className="label">Graph metrics</span>
                   <strong>{summary.graphMetrics.node_count} nodes / {summary.graphMetrics.edge_count} edges</strong>
                 </div>
-                <a className="download-link" href={data.report_url || `/reports/${data.case_id}.pdf`} target="_blank" rel="noreferrer">
-                  Download PDF report
-                </a>
-                <a className="download-link" href={data.csv_report_url || `/reports/${data.case_id}.csv`} target="_blank" rel="noreferrer">
-                  Download CSV report
-                </a>
+                <details className="technical-details">
+                  <summary>Technical details and reports</summary>
+                  <div className="technical-content">
+                    <span>{summary.graphMetrics.node_count} nodes · {summary.graphMetrics.edge_count} edges · {summary.graphHash.slice(0, 12)}…</span>
+                    <span className="report-links">
+                      <a className="download-link" href={data.report_url || `/reports/${data.case_id}.pdf`} target="_blank" rel="noreferrer">Download PDF</a>
+                      <a className="download-link" href={data.csv_report_url || `/reports/${data.case_id}.csv`} target="_blank" rel="noreferrer">Download CSV</a>
+                    </span>
+                  </div>
+                </details>
               </div>
 
               <div className="panel risk-panel">
@@ -273,7 +287,7 @@ export default function App(){
                 </div>
                 <div className="suspicious-path-box">
                   <span className="label">Suspicious path</span>
-                  <strong>{summary.suspiciousPath.length ? summary.suspiciousPath.join(' ? ') : 'No definitive path found'}</strong>
+                  <strong>{summary.suspiciousPath.length ? summary.suspiciousPath.map((address:string, index:number) => `${index ? `Hop ${index}` : 'Source'} ${address.slice(0, 7)}…${address.slice(-6)}`).join(' → ') : 'No definitive path found'}</strong>
                 </div>
               </div>
 
@@ -282,7 +296,7 @@ export default function App(){
                   <span className="eyebrow">Flow graph</span>
                   <h3>Wallet relationship graph</h3>
                 </div>
-                <GraphView data={data} />
+                <GraphView data={data.graph} path={data.trace?.path || []} asset={summary.asset} evidence={data.evidence || []} />
               </div>
 
               <div className="panel evidence-panel">
@@ -290,7 +304,7 @@ export default function App(){
                   <span className="eyebrow">Evidence</span>
                   <h3>Trace evidence ledger</h3>
                 </div>
-                <EvidenceTable rows={data.evidence || []} />
+                <EvidenceTable evidence={data.evidence || []} asset={summary.asset} />
               </div>
             </>
           )}

@@ -3,18 +3,21 @@ import React, {useState} from 'react'
 export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>void, authToken?:string}){
   const [sourceWallet, setSourceWallet] = useState('')
   const [targetWallet, setTargetWallet] = useState('')
-  const [walletCluster, setWalletCluster] = useState('')
+  const [additionalWallets, setAdditionalWallets] = useState('')
   const [caseId, setCaseId] = useState('INV-001')
   const [chain, setChain] = useState('ETH')
+  const [txHash, setTxHash] = useState('')
+  const [amount, setAmount] = useState('')
+  const [currency, setCurrency] = useState('ETH')
   const [maxHops, setMaxHops] = useState(3)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleTrace = async ()=>{
-    const wallets = walletCluster.split(/[\n,]+/).map(v=>v.trim()).filter(Boolean)
-    const networkWallets = Array.from(new Set([...(sourceWallet ? [sourceWallet] : []), ...(targetWallet ? [targetWallet] : []), ...wallets]))
-    if (!caseId.trim() || networkWallets.length === 0) {
-      setError('Enter a case ID and at least one valid Ethereum wallet address.')
+    const extraWallets = additionalWallets.split(/[\n,]+/).map(value => value.trim()).filter(Boolean)
+    const networkWallets = Array.from(new Set([...(sourceWallet ? [sourceWallet] : []), ...(targetWallet ? [targetWallet] : []), ...extraWallets]))
+    if (networkWallets.length === 0) {
+      setError('Enter at least one valid wallet address (victim).')
       return
     }
 
@@ -23,12 +26,15 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
 
     try {
       const payload = {
-        case_id: caseId,
+        case_id: caseId || undefined,
         case_name: `Case ${caseId}`,
         chain,
         wallets: networkWallets,
         source_wallet: sourceWallet || networkWallets[0],
         target_wallet: targetWallet || networkWallets[networkWallets.length - 1],
+        tx_hash: txHash || undefined,
+        amount: amount ? Number(amount) : undefined,
+        currency: currency || undefined,
         max_hops: maxHops,
       }
 
@@ -87,18 +93,38 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
       </div>
 
       <div className="field-group">
-        <label>Wallet cluster</label>
-        <textarea value={walletCluster} onChange={e=>setWalletCluster(e.target.value)} rows={3} placeholder="0x...\n0x..." />
+        <label>Additional wallets (optional)</label>
+        <textarea value={additionalWallets} onChange={e=>setAdditionalWallets(e.target.value)} rows={2} placeholder="One address per line" />
+      </div>
+
+      <div className="field-group">
+        <label>Transaction hash (optional)</label>
+        <input value={txHash} onChange={e=>setTxHash(e.target.value)} placeholder="0x... (tx hash)" />
+      </div>
+
+      <div className="field-group">
+        <label>Amount (optional)</label>
+        <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="e.g. 1.5" />
+      </div>
+
+      <div className="field-group">
+        <label>Currency</label>
+        <select value={currency} onChange={e=>setCurrency(e.target.value)}>
+          <option value="ETH">ETH</option>
+          <option value="TRX">TRX</option>
+        </select>
       </div>
 
       <div className="inline-fields">
         <div className="field-group compact">
           <label>Chain</label>
-          <select value={chain} onChange={e=>setChain(e.target.value)}>
+          <select value={chain} onChange={e=>{
+            const nextChain = e.target.value
+            setChain(nextChain)
+            setCurrency(nextChain === 'TRON' ? 'TRX' : 'ETH')
+          }}>
             <option value="ETH">ETH</option>
-            <option value="BSC">BSC</option>
-            <option value="POLYGON">POLYGON</option>
-            <option value="BASE">BASE</option>
+            <option value="TRON">TRON</option>
           </select>
         </div>
 
@@ -111,7 +137,7 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
       {error && <div className="error-banner">{error}</div>}
 
       <button className="primary-btn" onClick={handleTrace} disabled={loading}>
-        {loading ? 'Tracing?' : 'Trace wallet'}
+        {loading ? 'Tracing…' : 'Trace wallet'}
       </button>
     </div>
   )

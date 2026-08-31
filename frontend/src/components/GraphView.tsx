@@ -1,63 +1,75 @@
 import React, {useMemo} from 'react'
 
-export default function GraphView({data}:{data:any}){
-  const graph = data || { nodes: [], edges: [] }
-  const suspectAddresses = (data?.wallets || []).map((w:any) => w.address || w)
+function formatAddress(address:string) {
+  return address.length > 14 ? `${address.slice(0, 7)}…${address.slice(-6)}` : address
+}
 
+function formatAmount(value: unknown, asset: string) {
+  const amount = Number(value || 0)
+  if (!Number.isFinite(amount)) return `0 ${asset}`
+  return `${amount.toLocaleString(undefined, {maximumFractionDigits: 8})} ${asset}`
+}
+
+export default function GraphView({data, path, asset, evidence}:{data:any, path:string[], asset:string, evidence:any[]}){
+  const graph = data || {nodes: [], edges: []}
+  const orderedPath = path?.length ? path : graph.nodes || []
   const positions = useMemo(() => {
-    const nodes = graph.nodes || []
-    const out: Record<string, {x:number, y:number}> = {}
-    nodes.forEach((node:string, index:number) => {
-      const angle = nodes.length > 1 ? (Math.PI * 2 * index) / nodes.length : 0
-      const radius = nodes.length > 1 ? 150 : 0
-      out[node] = {
-        x: 280 + Math.cos(angle) * radius,
-        y: 180 + Math.sin(angle) * radius,
-      }
-    })
-    return out
-  }, [graph])
+    const count = orderedPath.length
+    const spacing = count > 1 ? 500 / (count - 1) : 250
+    return Object.fromEntries(orderedPath.map((node, index) => [
+      node,
+      {x: count > 1 ? 30 + index * spacing : 250, y: 160},
+    ]))
+  }, [orderedPath])
 
-  if (!graph.nodes || graph.nodes.length === 0) {
-    return <div className="graph-shell empty-graph">No graph data available.</div>
+  if (!orderedPath.length) {
+    return <div className="graph-shell empty-graph">No bounded trace path available.</div>
   }
 
-  return (
-    <svg className="graph-shell" viewBox="0 0 560 360" role="img" aria-label="Address relationship map">
-      {(graph.edges || []).map((edge:any) => {
-        const source = positions[edge[0]]
-        const target = positions[edge[1]]
-        if (!source || !target) return null
-        const midX = (source.x + target.x) / 2
-        const midY = (source.y + target.y) / 2 - 12
-        return (
-          <g key={edge[2] || `${edge[0]}-${edge[1]}`}>
-            <line x1={source.x} y1={source.y} x2={target.x} y2={target.y} stroke="#5eead4" strokeWidth="2.2" opacity="0.75" />
-            <text x={midX} y={midY} fill="#dbeafe" fontSize="10" textAnchor="middle">tx</text>
-          </g>
-        )
-      })}
+  const edgeFor = (from:string, to:string) =>
+    evidence.find((edge:any) => edge.from === from && edge.to === to)
 
-      {(graph.nodes || []).map((node:string, index:number) => {
-        const point = positions[node]
-        const isSuspect = suspectAddresses.includes(node)
-        return (
-          <g key={node}>
-            <circle
-              cx={point.x}
-              cy={point.y}
-              r={isSuspect ? 18 : 15}
-              fill={isSuspect ? '#f97316' : index % 2 === 0 ? '#38bdf8' : '#8b5cf6'}
-              stroke="#f8fafc"
-              strokeWidth="2"
-              opacity="0.96"
-            />
-            <text x={point.x} y={point.y + 4} fill="#f8fafc" fontSize="9" textAnchor="middle">
-              {node.slice(0, 6)}
-            </text>
-          </g>
-        )
-      })}
-    </svg>
+  return (
+    <div>
+      <svg className="graph-shell" viewBox="0 0 560 320" role="img"
+        aria-label={`Bounded transaction path: ${orderedPath.map(formatAddress).join(' to ')}`}>
+        {orderedPath.slice(0, -1).map((from, index) => {
+          const to = orderedPath[index + 1]
+          const source = positions[from]
+          const target = positions[to]
+          const edge = edgeFor(from, to)
+          return (
+            <g key={`${from}-${to}`}>
+              <line x1={source.x + 20} y1={source.y} x2={target.x - 20} y2={target.y}
+                stroke="#67e8f9" strokeWidth="3" markerEnd="url(#arrow)" />
+              <text x={(source.x + target.x) / 2} y="125" fill="#dbeafe" fontSize="11" textAnchor="middle">
+                Hop {index + 1} · {formatAmount(edge?.amount, asset)}
+              </text>
+            </g>
+          )
+        })}
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L6,3 z" fill="#67e8f9" />
+          </marker>
+        </defs>
+        {orderedPath.map((node, index) => {
+          const point = positions[node]
+          const role = index === 0 ? 'Source' : index === orderedPath.length - 1 ? 'Destination' : `Hop ${index}`
+          return (
+            <g key={node}>
+              <circle cx={point.x} cy={point.y} r="22"
+                fill={index === 0 ? '#f97316' : index === orderedPath.length - 1 ? '#34d399' : '#8b5cf6'}
+                stroke="#f8fafc" strokeWidth="2" />
+              <text x={point.x} y="205" fill="#f8fafc" fontSize="11" textAnchor="middle">{role}</text>
+              <text x={point.x} y="220" fill="#94a3b8" fontSize="10" textAnchor="middle">{formatAddress(node)}</text>
+            </g>
+          )
+        })}
+      </svg>
+      <p className="path-summary">
+        {orderedPath.map((node, index) => `${index === 0 ? 'Source' : `Hop ${index}`} ${formatAddress(node)}`).join(' → ')}
+      </p>
+    </div>
   )
 }

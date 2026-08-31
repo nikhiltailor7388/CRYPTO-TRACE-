@@ -50,7 +50,7 @@ def fetch_tron_transactions(address: str, api_key: str = None, limit: int = 50):
             "tx_hash": tx_hash,
             "from": tx.get("ownerAddress") or tx.get("from"),
             "to": target_address or tx.get("to"),
-            "amount": tx.get("amount") or tx.get("value") or 0,
+            "amount": float(tx.get("amount") or tx.get("value") or 0) / 1_000_000,
             "asset": (tx.get("tokenInfo") or {}).get("symbol") or tx.get("tokenSymbol") or "TRX",
             "timestamp": tx.get("timestamp") or tx.get("timeStamp"),
             "block": tx.get("block"),

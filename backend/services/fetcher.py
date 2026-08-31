@@ -9,6 +9,7 @@ from backend.config import settings
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 CACHE_FILE = DATA_DIR / "eth_cache.json"
+TRON_CACHE_FILE = DATA_DIR / "tron_cache.json"
 CHAIN_TO_ID = {
     "ETH": 1,
     "ETHEREUM": 1,
@@ -18,15 +19,30 @@ CHAIN_TO_ID = {
     "MATIC": 137,
     "ARBITRUM": 42161,
     "BASE": 8453,
+    "TRON": 1,
 }
 
 
 def fetch_transactions_from_cache(chain: str = "ETH") -> List[Dict[str, Any]]:
     chain_key = str(chain or "ETH").upper().replace(" ", "_")
-    if chain_key.startswith("TRON"):
+    cache_path = TRON_CACHE_FILE if chain_key.startswith("TRON") else CACHE_FILE
+    if not cache_path.exists():
         return []
-    with open(CACHE_FILE, "r", encoding="utf-8") as f:
+    with open(cache_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def _filter_cached_transactions(rows: List[Dict[str, Any]], address: str) -> List[Dict[str, Any]]:
+    """Return only cached transactions involving the requested wallet."""
+    normalized_address = str(address or "").strip().lower()
+    if not normalized_address:
+        return []
+    return [
+        row
+        for row in rows
+        if str(row.get("from") or "").strip().lower() == normalized_address
+        or str(row.get("to") or "").strip().lower() == normalized_address
+    ]
 
 
 def fetch_transactions_etherscan(address: str, api_key: str, chainid: int = 1) -> List[Dict[str, Any]]:
@@ -46,7 +62,7 @@ def fetch_transactions_etherscan(address: str, api_key: str, chainid: int = 1) -
             return results
         return []
     except RuntimeError:
-        return fetch_transactions_from_cache()
+        return _filter_cached_transactions(fetch_transactions_from_cache(chain="ETH"), address)
 
 
 def fetch_transactions_tronscan(address: str, api_key: str = None) -> List[Dict[str, Any]]:
@@ -75,22 +91,22 @@ def fetch_transactions(address: str, use_cache: bool = True, api_key: str = None
 
     if chain_key.startswith("TRON"):
         if use_cache or not (api_key or settings.tronscan_api_key):
-            return fetch_transactions_from_cache(chain=chain_key)
+            return _filter_cached_transactions(fetch_transactions_from_cache(chain=chain_key), address)
         try:
             results = fetch_transactions_tronscan(address, api_key or settings.tronscan_api_key)
             if not results:
-                return fetch_transactions_from_cache(chain=chain_key)
+                return _filter_cached_transactions(fetch_transactions_from_cache(chain=chain_key), address)
             return results
         except Exception:
-            return fetch_transactions_from_cache(chain=chain_key)
+            return _filter_cached_transactions(fetch_transactions_from_cache(chain=chain_key), address)
 
     if use_cache or not (api_key or settings.etherscan_api_key):
-        return fetch_transactions_from_cache(chain=chain_key)
+        return _filter_cached_transactions(fetch_transactions_from_cache(chain=chain_key), address)
 
     try:
         results = fetch_transactions_etherscan(address, api_key or settings.etherscan_api_key, chainid=chain_id)
         if not results:
-            return fetch_transactions_from_cache(chain=chain_key)
+            return _filter_cached_transactions(fetch_transactions_from_cache(chain=chain_key), address)
         return results
     except Exception:
-        return fetch_transactions_from_cache(chain=chain_key)
+        return _filter_cached_transactions(fetch_transactions_from_cache(chain=chain_key), address)

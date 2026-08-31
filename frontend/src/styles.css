@@ -347,6 +347,40 @@ button, input, textarea, select {
   background: rgba(52, 211, 153, 0.12);
   border: 1px solid rgba(52, 211, 153, 0.35);
   font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.technical-details {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.technical-details summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.technical-content {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 10px;
+}
+
+.report-links {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.path-summary {
+  margin: 10px 4px 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .risk-panel,
@@ -462,6 +496,18 @@ td a {
 .tag.neutral {
   background: rgba(148, 163, 184, 0.1);
   color: #cbd5e1;
+}
+
+.vasp-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.vasp-cell small {
+  color: var(--muted);
+  font-size: 0.72rem;
 }
 
 .empty-panel {
