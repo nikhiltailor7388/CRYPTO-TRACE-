@@ -16,6 +16,7 @@ from backend.services.fraud_detector import (
     identify_suspicious_path,
 )
 from backend.graph.trace_engine import build_transaction_graph, bounded_trace
+from backend.services.graph_utils import bfs_subgraph_from_graph
 from backend.services.normalizer import normalize_etherscan_raw
 from backend.services.vasp_matcher import load_vasp_labels, match_vasp_for_address
 
@@ -30,6 +31,9 @@ class TraceRequest(BaseModel):
     source_wallet: Optional[str] = None
     target_wallet: Optional[str] = None
     address: Optional[str] = None
+    tx_hash: Optional[str] = None
+    amount: Optional[float] = None
+    currency: Optional[str] = None
     max_hops: int = Field(3, le=3)
     start_date: Optional[str] = None
     end_date: Optional[str] = None
@@ -80,10 +84,27 @@ def trace(req: TraceRequest, request: Request):
         if not all_normalized:
             raise HTTPException(status_code=404, detail="No transaction data found for the provided wallet(s).")
 
-        G = build_transaction_graph(all_normalized)
-        traced_nodes, traced_edges, trace_path = bounded_trace(G, wallet_targets, req.max_hops)
+        import time
+        import uuid
 
-        full_evidence, annotated = apply_fifo_attribution(all_normalized, wallet_targets)
+        G = build_transaction_graph(all_normalized)
+
+        # Generate a case_id if none provided.
+        generated_case_id = req.case_id if req.case_id else f"CASE-{int(time.time())}-{str(uuid.uuid4())[:8]}"
+
+        # If a specific tx_hash is provided, prefer tracing from the transaction's affected addresses.
+        seed_addresses = list(wallet_targets)
+        seed_tx = None
+        if req.tx_hash:
+            for tx in all_normalized:
+                if str(tx.get("tx_hash")).lower() == str(req.tx_hash).lower():
+                    seed_tx = tx
+                    break
+            if seed_tx:
+                seed_addresses = [addr for addr in [seed_tx.get("from"), seed_tx.get("to")] if addr]
+
+        traced_nodes, traced_edges, trace_path = bounded_trace(G, seed_addresses or wallet_targets, req.max_hops)
+        full_evidence, annotated = apply_fifo_attribution(all_normalized, seed_addresses or wallet_targets)
 
         traced_edge_set = {(e[0], e[1]) for e in traced_edges}
 
@@ -97,6 +118,36 @@ def trace(req: TraceRequest, request: Request):
             if key in traced_edge_set:
                 e["hop"] = edge_to_hop.get(key)
                 evidence.append(e)
+
+        nodes, edges = bfs_subgraph_from_graph(G, seed_addresses, req.max_hops)
+
+        # Compute wallet cluster and destination wallets (top recipients).
+        recipient_sums = {}
+        tx_counts = {}
+        for ev in evidence:
+            to = ev.get("to")
+            amt = float(ev.get("amount") or 0)
+            if not to:
+                continue
+            recipient_sums[to] = recipient_sums.get(to, 0.0) + amt
+            tx_counts[to] = tx_counts.get(to, 0) + 1
+
+        sorted_recipients = sorted(recipient_sums.items(), key=lambda x: x[1], reverse=True)
+        destination_wallets = [addr for addr, _ in sorted_recipients[:5]]
+        wallet_cluster = list(nodes)
+
+        node_roles = {}
+        for n in wallet_cluster:
+            incoming = sum(float(ev.get("amount") or 0) for ev in evidence if ev.get("to") == n)
+            outgoing = sum(float(ev.get("amount") or 0) for ev in evidence if ev.get("from") == n)
+            node_roles[n] = {
+                "address": n,
+                "role": "suspect" if n in seed_addresses else ("destination" if n in destination_wallets else "intermediate"),
+                "incoming_total": round(incoming, 6),
+                "outgoing_total": round(outgoing, 6),
+                "tx_count_in": sum(1 for ev in evidence if ev.get("to") == n),
+                "tx_count_out": sum(1 for ev in evidence if ev.get("from") == n),
+            }
 
         vasp_labels = load_vasp_labels()
         for e in evidence:
@@ -125,9 +176,10 @@ def trace(req: TraceRequest, request: Request):
         if total_value > 0:
             risk_score = round(min(99, max(15, (unclassified_value / total_value) * 100)))
 
-        risk_profile = calculate_multilayer_probability(evidence, wallet_targets)
-        graph_hash = build_graph_hash(req.case_id, wallet_targets, evidence)
-        graph_metrics = summarize_graph(G, wallet_targets)
+        analysis_wallets = seed_addresses if seed_addresses else wallet_targets
+        risk_profile = calculate_multilayer_probability(evidence, analysis_wallets)
+        graph_hash = build_graph_hash(generated_case_id, analysis_wallets, evidence)
+        graph_metrics = summarize_graph(G, analysis_wallets)
 
         sources = [
             {
@@ -146,12 +198,15 @@ def trace(req: TraceRequest, request: Request):
         ]
 
         response = {
-            "case_id": req.case_id,
+            "case_id": generated_case_id,
             "status": "complete",
             "wallets": [{"address": w, "role": "suspect"} for w in wallet_targets],
             "source_wallet": req.source_wallet or (req.address if req.address else None),
             "target_wallet": req.target_wallet,
             "chain": chain_name,
+            "seed_tx": seed_tx or None,
+            "requested_amount": req.amount,
+            "requested_currency": req.currency,
             "summary": {
                 "total_transactions": len(all_normalized),
                 "hops_traced": req.max_hops,
@@ -167,7 +222,7 @@ def trace(req: TraceRequest, request: Request):
                 "confidence": risk_profile.get("confidence", "low"),
                 "fraudster_candidate": risk_profile.get("fraudster_candidate"),
                 "risk_factors": risk_profile.get("risk_factors", []),
-                "suspicious_path": identify_suspicious_path(evidence, wallet_targets),
+                "suspicious_path": identify_suspicious_path(evidence, analysis_wallets),
             },
             "trace": {
                 "path": trace_path,
@@ -176,19 +231,22 @@ def trace(req: TraceRequest, request: Request):
             "graph": {"nodes": list(traced_nodes), "edges": [(e[0], e[1], e[3]) for e in traced_edges]},
             "graph_metrics": graph_metrics,
             "graph_hash": graph_hash,
+            "destination_wallets": destination_wallets,
+            "wallet_cluster": wallet_cluster,
+            "node_roles": node_roles,
             "vasp_matches": list(unique_vasp.values()),
             "evidence": evidence,
             "sources": sources,
             "limitations": limitations,
-            "report_url": f"/reports/{req.case_id}.pdf",
-            "csv_report_url": f"/reports/{req.case_id}.csv",
+            "report_url": f"/reports/{generated_case_id}.pdf",
+            "csv_report_url": f"/reports/{generated_case_id}.csv",
             "data_source": "live" if use_eth and not demo_mode else "cached",
             "fallback_used": demo_mode and (not use_eth or not api_key),
         }
 
         try:
             from backend.services.persistence import save_case
-            save_case(req.case_id, response, user_id=user_id)
+            save_case(generated_case_id, response, user_id=user_id)
         except Exception:
             pass
         return response
