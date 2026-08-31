@@ -1,5 +1,7 @@
 import hashlib
 import json
+from collections import defaultdict
+from datetime import datetime
 from typing import Any, Dict, List
 
 
@@ -19,6 +21,93 @@ def build_graph_hash(case_id: str, wallets: List[str], evidence: List[Dict[str, 
     }
     encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:32]
+
+
+def build_wallet_clusters(evidence: List[Dict[str, Any]], wallets: List[str]) -> List[Dict[str, Any]]:
+    """Build a basic probabilistic cluster list using common-input-ownership and peeling-chain heuristics.
+
+    These are investigative leads rather than proof of same ownership. Every cluster must carry a reason string and
+    confidence value, matching the system requirement for transparent probabilistic clustering.
+    """
+    if not evidence:
+        return []
+
+    normalized_wallets = {str(w or '').lower() for w in wallets if w}
+    by_origin: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for item in evidence:
+        frm = str(item.get("from") or '').lower()
+        if frm:
+            by_origin[frm].append(item)
+
+    clusters: List[Dict[str, Any]] = []
+    seen_members = set()
+
+    # Common-input-ownership heuristic: a single source repeatedly sends to multiple downstream addresses in a short window.
+    for origin, items in sorted(by_origin.items()):
+        recipients = []
+        tx_hashes = []
+        for item in items:
+            to = str(item.get("to") or '').lower()
+            tx_hash = str(item.get("tx_hash") or '')
+            if to and to not in normalized_wallets and to not in recipients:
+                recipients.append(to)
+            if tx_hash and tx_hash not in tx_hashes:
+                tx_hashes.append(tx_hash)
+        if len(recipients) >= 2:
+            members = [origin] + recipients[:4]
+            cluster_key = tuple(sorted(members))
+            if cluster_key in seen_members:
+                continue
+            seen_members.add(cluster_key)
+            clusters.append({
+                "id": f"cluster-{len(clusters) + 1}",
+                "members": members,
+                "confidence": 0.70,
+                "heuristic": "common-input-ownership",
+                "reason": (
+                    f"Grouped because {len(recipients)} addresses were observed as downstream recipients from the same origin "
+                    f"wallet across txs {', '.join(tx_hashes[:3]) or 'unknown'}; this is a probabilistic grouping and not definitive proof of shared control."
+                ),
+            })
+
+    # Peeling chain heuristic: a wallet repeatedly sends on a large proportion of its balance, leaving a small remainder each hop.
+    txs = sorted(
+        [item for item in evidence if item.get("timestamp")],
+        key=lambda item: str(item.get("timestamp") or ""),
+    )
+    for index in range(len(txs) - 1):
+        current = txs[index]
+        nxt = txs[index + 1]
+        current_from = str(current.get("from") or '').lower()
+        next_to = str(nxt.get("to") or '').lower()
+        current_amount = float(current.get("amount") or 0)
+        next_amount = float(nxt.get("amount") or 0)
+        if not current_from or not next_to or current_amount <= 0 or next_amount <= 0:
+            continue
+        if current_from == next_to and current_amount > next_amount and (next_amount / current_amount) < 0.5:
+            cluster_members = [current_from, str(current.get("to") or '').lower(), next_to]
+            cluster_key = tuple(sorted(cluster_members))
+            if cluster_key in seen_members:
+                continue
+            seen_members.add(cluster_key)
+            clusters.append({
+                "id": f"cluster-{len(clusters) + 1}",
+                "members": [m for m in cluster_members if m],
+                "confidence": 0.65,
+                "heuristic": "peeling-chain-detection",
+                "reason": (
+                    f"Peeling chain pattern detected across hops {index + 1}-{index + 2}: the wallet repeatedly forwarded most of its balance while retaining a smaller remainder; "
+                    "this is a probabilistic layering lead, not proof of ownership."
+                ),
+            })
+
+    return clusters
+
+
+def compute_evidence_checksum(evidence: List[Dict[str, Any]], *extra: Dict[str, Any]) -> str:
+    payload = {"evidence": evidence, "extras": list(extra)}
+    flat = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(flat).hexdigest()
 
 
 def calculate_multilayer_probability(evidence: List[Dict[str, Any]], wallets: List[str]) -> Dict[str, Any]:

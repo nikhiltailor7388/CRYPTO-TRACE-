@@ -23,6 +23,7 @@ type AuthState = {
 
 export default function App(){
   const [data, setData] = useState<any>(null)
+  const [language, setLanguage] = useState<'en' | 'hi'>('en')
   const [auth, setAuth] = useState<AuthState | null>(() => {
     const raw = localStorage.getItem(STORAGE_KEY)
     return raw ? JSON.parse(raw) : null
@@ -115,8 +116,43 @@ export default function App(){
       suspiciousPath: data?.risk_profile?.suspicious_path || [],
       riskFactors: data?.risk_profile?.risk_factors || [],
       graphMetrics: data?.graph_metrics || {node_count: 0, edge_count: 0, max_degree: 0},
+      legalNotice: data?.legal_notice || 'This report identifies the likely exchange endpoint and supporting evidence for a legal request. It does not identify a real person — that requires the exchange\'s own KYC process, which is outside this system\'s scope.',
+      checksum: data?.evidence_checksum || 'N/A',
     }
   }, [data])
+
+  const downloadEvidenceJson = () => {
+    if (!data) return
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `evidence-${data.case_id || 'case'}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const downloadEvidenceCsv = () => {
+    if (!data || !data.evidence) return
+    const rows = data.evidence.map((row:any) => ({
+      tx_hash: row.tx_hash,
+      source_wallet: row.from,
+      destination_wallet: row.to,
+      amount: row.amount,
+      asset: row.asset,
+      timestamp: row.timestamp,
+      vasp: row.vasp,
+      explorer_url: row.explorer_url,
+    }))
+    const csv = [Object.keys(rows[0] || {}).join(','), ...rows.map((r:any) => Object.values(r).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `evidence-${data.case_id || 'case'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="app-shell">
@@ -127,6 +163,10 @@ export default function App(){
         </div>
         <div className="topbar-actions">
           <div className="status-pill">{summary.dataSource.toUpperCase()} DATA SOURCE</div>
+          <div className="lang-toggle">
+            <button className={language === 'en' ? 'toggle active' : 'toggle'} onClick={() => setLanguage('en')}>EN</button>
+            <button className={language === 'hi' ? 'toggle active' : 'toggle'} onClick={() => setLanguage('hi')}>HI</button>
+          </div>
           {auth ? (
             <button className="ghost-btn" onClick={() => setAuth(null)}>Logout</button>
           ) : null}
@@ -253,9 +293,20 @@ export default function App(){
                 <a className="download-link" href={data.report_url || `/reports/${data.case_id}.pdf`} target="_blank" rel="noreferrer">
                   Download PDF report
                 </a>
-                <a className="download-link" href={data.csv_report_url || `/reports/${data.case_id}.csv`} target="_blank" rel="noreferrer">
+               <a className="download-link" href={data.csv_report_url || `/reports/${data.case_id}.csv`} target="_blank" rel="noreferrer">
                   Download CSV report
                 </a>
+               <button className="download-link" type="button" onClick={downloadEvidenceJson}>Download Evidence (JSON)</button>
+               <button className="download-link" type="button" onClick={downloadEvidenceCsv}>Download Evidence (CSV)</button>
+              </div>
+
+              <div className="panel info-panel">
+                <div className="panel-header inline-header">
+                  <span className="eyebrow">Legal scope</span>
+                  <h3>Investigator notice</h3>
+                </div>
+                <p>{summary.legalNotice}</p>
+                <div className="checksum-box">Evidence checksum: {summary.checksum}</div>
               </div>
 
               <div className="panel risk-panel">

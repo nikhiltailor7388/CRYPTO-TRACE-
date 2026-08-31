@@ -2,7 +2,6 @@ import React, {useState} from 'react'
 
 export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>void, authToken?:string}){
   const [sourceWallet, setSourceWallet] = useState('')
-  const [targetWallet, setTargetWallet] = useState('')
   const [caseId, setCaseId] = useState('INV-001')
   const [chain, setChain] = useState('ETH')
   const [txHash, setTxHash] = useState('')
@@ -13,9 +12,9 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
   const [error, setError] = useState('')
 
   const handleTrace = async ()=>{
-    const networkWallets = Array.from(new Set([...(sourceWallet ? [sourceWallet] : []), ...(targetWallet ? [targetWallet] : [])]))
+    const networkWallets = Array.from(new Set([...(sourceWallet ? [sourceWallet] : [])]))
     if (networkWallets.length === 0) {
-      setError('Enter at least one valid wallet address (victim).')
+      setError('Enter a valid victim/suspect wallet address.')
       return
     }
 
@@ -29,7 +28,6 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
         chain,
         wallets: networkWallets,
         source_wallet: sourceWallet || networkWallets[0],
-        target_wallet: targetWallet || networkWallets[networkWallets.length - 1],
         tx_hash: txHash || undefined,
         amount: amount ? Number(amount) : undefined,
         currency: currency || undefined,
@@ -81,17 +79,12 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
       </div>
 
       <div className="field-group">
-        <label>Reported wallet</label>
+        <label>Victim / suspect wallet address</label>
         <input value={sourceWallet} onChange={e=>setSourceWallet(e.target.value)} placeholder="0x..." />
       </div>
 
       <div className="field-group">
-        <label>Destination wallet</label>
-        <input value={targetWallet} onChange={e=>setTargetWallet(e.target.value)} placeholder="0x..." />
-      </div>
-
-      <div className="field-group">
-        <label>Transaction hash (optional)</label>
+        <label>Transaction hash / ID (optional)</label>
         <input value={txHash} onChange={e=>setTxHash(e.target.value)} placeholder="0x... (tx hash)" />
       </div>
 
@@ -101,7 +94,7 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
       </div>
 
       <div className="field-group">
-        <label>Currency</label>
+        <label>Currency / asset (optional)</label>
         <select value={currency} onChange={e=>setCurrency(e.target.value)}>
           <option value="ETH">ETH</option>
           <option value="USDT">USDT</option>
@@ -129,7 +122,7 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
       {error && <div className="error-banner">{error}</div>}
 
       <button className="primary-btn" onClick={handleTrace} disabled={loading}>
-        {loading ? 'Tracing?' : 'Trace wallet'}
+        {loading ? 'Tracing...' : 'Trace wallet'}
       </button>
     </div>
   )

@@ -17,7 +17,15 @@ def get_report(case_id: str):
         evidence = case.get('evidence', [])
         summary = case.get('summary', {})
         graph_hash = case.get('graph_hash')
-        pdf_path = generate_pdf(case_id, evidence, summary=summary, graph_hash=graph_hash)
+        pdf_path = generate_pdf(
+            case_id,
+            evidence,
+            summary=summary,
+            graph_hash=graph_hash,
+            wallet_clusters=case.get('wallet_clusters', []),
+            legal_notice=case.get('legal_notice'),
+            evidence_checksum=case.get('evidence_checksum'),
+        )
         return FileResponse(path=pdf_path, filename=f"report_{case_id}.pdf", media_type='application/pdf')
     except HTTPException:
         raise

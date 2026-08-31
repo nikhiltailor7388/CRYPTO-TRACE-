@@ -46,17 +46,24 @@ def fetch_transactions_etherscan(address: str, api_key: str, chainid: int = 1) -
 
 
 def fetch_transactions(address: str, use_cache: bool = True, api_key: str = None, chain: str = "ETH") -> List[Dict[str, Any]]:
-    """Public function to fetch transactions for an address."""
+    """Public function to fetch transactions for an address.
+
+    In live investigation mode the system must not silently fall back to demo cache data. If the live lookup fails or the
+    address has no real history, the caller must surface an explicit error so the UI can show it clearly.
+    """
     chain_key = str(chain or "ETH").upper().replace(" ", "_")
     chain_id = CHAIN_TO_ID.get(chain_key, 1)
 
-    if use_cache or not (api_key or settings.etherscan_api_key):
+    if use_cache:
         return fetch_transactions_from_cache()
+
+    if not (api_key or settings.etherscan_api_key):
+        return []
 
     try:
         results = fetch_transactions_etherscan(address, api_key or settings.etherscan_api_key, chainid=chain_id)
         if not results:
-            return fetch_transactions_from_cache()
+            return []
         return results
     except Exception:
-        return fetch_transactions_from_cache()
+        return []
