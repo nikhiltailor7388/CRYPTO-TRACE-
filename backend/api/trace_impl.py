@@ -30,7 +30,10 @@ class TraceRequest(BaseModel):
     source_wallet: Optional[str] = None
     target_wallet: Optional[str] = None
     address: Optional[str] = None
-    max_hops: int = Field(3, le=3)
+    tx_hash: Optional[str] = None
+    amount: Optional[float] = None
+    currency: Optional[str] = None
+    max_hops: int = Field(3, le=5)
     start_date: Optional[str] = None
     end_date: Optional[str] = None
 
@@ -81,8 +84,21 @@ def trace(req: TraceRequest, request: Request):
             raise HTTPException(status_code=404, detail="No transaction data found for the provided wallet(s).")
 
         G = build_graph_from_txs(all_normalized)
-        nodes, edges = bfs_subgraph_from_graph(G, wallet_targets, req.max_hops)
-        evidence, annotated = apply_fifo_attribution(all_normalized, wallet_targets)
+
+        # If a specific tx_hash is provided, prefer tracing from that transaction's affected addresses
+        seed_addresses = list(wallet_targets)
+        seed_tx = None
+        if req.tx_hash:
+            for tx in all_normalized:
+                if str(tx.get('tx_hash')).lower() == str(req.tx_hash).lower():
+                    seed_tx = tx
+                    break
+            if seed_tx:
+                # start trace from the tx's to/from addresses
+                seed_addresses = [addr for addr in [seed_tx.get('from'), seed_tx.get('to')] if addr]
+
+        nodes, edges = bfs_subgraph_from_graph(G, seed_addresses, req.max_hops)
+        evidence, annotated = apply_fifo_attribution(all_normalized, seed_addresses)
 
         vasp_labels = load_vasp_labels()
         for e in evidence:
@@ -122,6 +138,9 @@ def trace(req: TraceRequest, request: Request):
             "source_wallet": req.source_wallet or (req.address if req.address else None),
             "target_wallet": req.target_wallet,
             "chain": chain_name,
+            "seed_tx": seed_tx or None,
+            "requested_amount": req.amount,
+            "requested_currency": req.currency,
             "summary": {
                 "total_transactions": len(all_normalized),
                 "hops_traced": req.max_hops,

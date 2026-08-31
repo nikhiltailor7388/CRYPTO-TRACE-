@@ -6,6 +6,9 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
   const [walletCluster, setWalletCluster] = useState('')
   const [caseId, setCaseId] = useState('INV-001')
   const [chain, setChain] = useState('ETH')
+  const [txHash, setTxHash] = useState('')
+  const [amount, setAmount] = useState('')
+  const [currency, setCurrency] = useState('ETH')
   const [maxHops, setMaxHops] = useState(3)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -29,6 +32,9 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
         wallets: networkWallets,
         source_wallet: sourceWallet || networkWallets[0],
         target_wallet: targetWallet || networkWallets[networkWallets.length - 1],
+        tx_hash: txHash || undefined,
+        amount: amount ? Number(amount) : undefined,
+        currency: currency || undefined,
         max_hops: maxHops,
       }
 
@@ -89,6 +95,25 @@ export default function CaseForm({onResult, authToken}:{onResult:(result:any)=>v
       <div className="field-group">
         <label>Wallet cluster</label>
         <textarea value={walletCluster} onChange={e=>setWalletCluster(e.target.value)} rows={3} placeholder="0x...\n0x..." />
+      </div>
+
+      <div className="field-group">
+        <label>Transaction hash (optional)</label>
+        <input value={txHash} onChange={e=>setTxHash(e.target.value)} placeholder="0x... (tx hash)" />
+      </div>
+
+      <div className="field-group">
+        <label>Amount (optional)</label>
+        <input value={amount} onChange={e=>setAmount(e.target.value)} placeholder="e.g. 1.5" />
+      </div>
+
+      <div className="field-group">
+        <label>Currency</label>
+        <select value={currency} onChange={e=>setCurrency(e.target.value)}>
+          <option value="ETH">ETH</option>
+          <option value="USDT">USDT</option>
+          <option value="USDC">USDC</option>
+        </select>
       </div>
 
       <div className="inline-fields">
