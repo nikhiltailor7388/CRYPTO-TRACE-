@@ -17,10 +17,13 @@ def get_report(case_id: str):
         evidence = case.get('evidence', [])
         summary = case.get('summary', {})
         graph_hash = case.get('graph_hash')
+        report_summary = dict(summary)
+        report_summary["chain"] = case.get("chain", report_summary.get("chain", "ETH"))
+        report_summary["risk_factors"] = case.get("risk_profile", {}).get("risk_factors", [])
         pdf_path = generate_pdf(
             case_id,
             evidence,
-            summary=summary,
+            summary=report_summary,
             graph_hash=graph_hash,
             wallet_clusters=case.get('wallet_clusters', []),
             legal_notice=case.get('legal_notice'),
@@ -39,7 +42,9 @@ def get_report_csv(case_id: str):
         case = load_case(case_id)
         if not case:
             raise HTTPException(status_code=404, detail=f"Case {case_id} not found. Run /trace first.")
-        csv_path = generate_csv(case_id, case.get('evidence', []), summary=case.get('summary', {}), graph_hash=case.get('graph_hash'))
+        summary = dict(case.get('summary', {}))
+        summary["chain"] = case.get("chain", summary.get("chain", "ETH"))
+        csv_path = generate_csv(case_id, case.get('evidence', []), summary=summary, graph_hash=case.get('graph_hash'))
         return FileResponse(path=csv_path, filename=f"report_{case_id}.csv", media_type='text/csv')
     except HTTPException:
         raise

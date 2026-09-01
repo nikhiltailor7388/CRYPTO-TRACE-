@@ -26,11 +26,11 @@ export default function EvidenceTable({ evidence, rows }: { evidence?: any[]; ro
           </tr>
         </thead>
         <tbody>
-          {items.map((e:any)=> (
-            <tr key={e.tx_hash || `${e.from}-${e.to}`}>
+          {items.map((e:any, index:number)=> (
+            <tr key={e.tx_hash || `${e.from}-${e.to}-${index}`}>
               <td>{formatAddress(e.from)}</td>
               <td>{formatAddress(e.to)}</td>
-              <td><a href={e.explorer_url || '#'} target="_blank" rel="noreferrer">{(e.tx_hash||'').slice(0, 12)}</a></td>
+              <td>{e.explorer_url ? <a href={e.explorer_url} target="_blank" rel="noreferrer">{(e.tx_hash||'').slice(0, 12)}</a> : (e.tx_hash || 'unknown').slice(0, 12)}</td>
               <td>{Number(e.amount || 0).toFixed(3)}</td>
               <td>{e.asset || 'ETH'}</td>
               <td>{e.timestamp || 'unknown'}</td>
@@ -41,7 +41,7 @@ export default function EvidenceTable({ evidence, rows }: { evidence?: any[]; ro
                 </span>
               </td>
               <td>
-                <a href={e.explorer_url || '#'} target="_blank" rel="noreferrer">Open</a>
+                {e.explorer_url ? <a href={e.explorer_url} target="_blank" rel="noreferrer">Open ↗</a> : 'Unavailable'}
               </td>
             </tr>
           ))}

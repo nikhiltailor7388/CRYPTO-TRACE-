@@ -4,6 +4,12 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, List
 
+from backend.services.address_validator import normalize_address
+
+
+def _address(value: Any, chain: str = "ETH") -> str:
+    return normalize_address(value, chain)
+
 
 def build_graph_hash(case_id: str, wallets: List[str], evidence: List[Dict[str, Any]]) -> str:
     payload = {
@@ -23,7 +29,7 @@ def build_graph_hash(case_id: str, wallets: List[str], evidence: List[Dict[str, 
     return hashlib.sha256(encoded).hexdigest()[:32]
 
 
-def build_wallet_clusters(evidence: List[Dict[str, Any]], wallets: List[str]) -> List[Dict[str, Any]]:
+def build_wallet_clusters(evidence: List[Dict[str, Any]], wallets: List[str], chain: str = "ETH") -> List[Dict[str, Any]]:
     """Build a basic probabilistic cluster list using common-input-ownership and peeling-chain heuristics.
 
     These are investigative leads rather than proof of same ownership. Every cluster must carry a reason string and
@@ -32,10 +38,10 @@ def build_wallet_clusters(evidence: List[Dict[str, Any]], wallets: List[str]) ->
     if not evidence:
         return []
 
-    normalized_wallets = {str(w or '').lower() for w in wallets if w}
+    normalized_wallets = {_address(w, chain) for w in wallets if w}
     by_origin: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for item in evidence:
-        frm = str(item.get("from") or '').lower()
+        frm = _address(item.get("from"), item.get("source_chain") or item.get("chain") or chain)
         if frm:
             by_origin[frm].append(item)
 
@@ -47,7 +53,7 @@ def build_wallet_clusters(evidence: List[Dict[str, Any]], wallets: List[str]) ->
         recipients = []
         tx_hashes = []
         for item in items:
-            to = str(item.get("to") or '').lower()
+            to = _address(item.get("to"), item.get("destination_chain") or item.get("chain") or chain)
             tx_hash = str(item.get("tx_hash") or '')
             if to and to not in normalized_wallets and to not in recipients:
                 recipients.append(to)
@@ -78,14 +84,14 @@ def build_wallet_clusters(evidence: List[Dict[str, Any]], wallets: List[str]) ->
     for index in range(len(txs) - 1):
         current = txs[index]
         nxt = txs[index + 1]
-        current_from = str(current.get("from") or '').lower()
-        next_to = str(nxt.get("to") or '').lower()
+        current_from = _address(current.get("from"), current.get("source_chain") or current.get("chain") or chain)
+        next_to = _address(nxt.get("to"), nxt.get("destination_chain") or nxt.get("chain") or chain)
         current_amount = float(current.get("amount") or 0)
         next_amount = float(nxt.get("amount") or 0)
         if not current_from or not next_to or current_amount <= 0 or next_amount <= 0:
             continue
         if current_from == next_to and current_amount > next_amount and (next_amount / current_amount) < 0.5:
-            cluster_members = [current_from, str(current.get("to") or '').lower(), next_to]
+            cluster_members = [current_from, _address(current.get("to"), current.get("destination_chain") or current.get("chain") or chain), next_to]
             cluster_key = tuple(sorted(cluster_members))
             if cluster_key in seen_members:
                 continue
@@ -110,7 +116,7 @@ def compute_evidence_checksum(evidence: List[Dict[str, Any]], *extra: Dict[str, 
     return hashlib.sha256(flat).hexdigest()
 
 
-def calculate_multilayer_probability(evidence: List[Dict[str, Any]], wallets: List[str]) -> Dict[str, Any]:
+def calculate_multilayer_probability(evidence: List[Dict[str, Any]], wallets: List[str], chain: str = "ETH") -> Dict[str, Any]:
     if not evidence:
         return {
             "overall_probability": 0,
@@ -123,9 +129,9 @@ def calculate_multilayer_probability(evidence: List[Dict[str, Any]], wallets: Li
     traceable_value = sum(float(item.get("traceable_amount") or 0) for item in evidence)
     unclassified_value = sum(float(item.get("unclassified_amount") or 0) for item in evidence)
     vasp_hits = sum(1 for item in evidence if (item.get("vasp") or "UNKNOWN") != "UNKNOWN")
-    unique_addresses = {str(item.get("from") or '').lower() for item in evidence} | {str(item.get("to") or '').lower() for item in evidence}
+    unique_addresses = {_address(item.get("from"), item.get("source_chain") or item.get("chain") or chain) for item in evidence} | {_address(item.get("to"), item.get("destination_chain") or item.get("chain") or chain) for item in evidence}
     cluster_size = len(unique_addresses)
-    wallet_set = {str(w or '').lower() for w in wallets if w}
+    wallet_set = {_address(w, chain) for w in wallets if w}
 
     direct_exposure = min(35.0, (traceable_value / total_value * 35.0) if total_value else 0.0)
     vasp_factor = min(25.0, vasp_hits * 12.5)
@@ -174,8 +180,8 @@ def calculate_multilayer_probability(evidence: List[Dict[str, Any]], wallets: Li
 
     candidate_map: Dict[str, float] = {}
     for item in evidence:
-        frm = str(item.get("from") or '').lower()
-        to = str(item.get("to") or '').lower()
+        frm = _address(item.get("from"), item.get("source_chain") or item.get("chain") or chain)
+        to = _address(item.get("to"), item.get("destination_chain") or item.get("chain") or chain)
         amt = float(item.get("amount") or 0)
         if frm and frm not in wallet_set:
             candidate_map[frm] = candidate_map.get(frm, 0.0) + amt
@@ -196,13 +202,13 @@ def calculate_multilayer_probability(evidence: List[Dict[str, Any]], wallets: Li
     }
 
 
-def identify_suspicious_path(evidence: List[Dict[str, Any]], wallets: List[str]) -> List[str]:
-    wallet_set = {str(w or '').lower() for w in wallets if w}
+def identify_suspicious_path(evidence: List[Dict[str, Any]], wallets: List[str], chain: str = "ETH") -> List[str]:
+    wallet_set = {_address(w, chain) for w in wallets if w}
     current = None
     path = []
     for item in evidence:
-        frm = str(item.get("from") or '').lower()
-        to = str(item.get("to") or '').lower()
+        frm = _address(item.get("from"), item.get("source_chain") or item.get("chain") or chain)
+        to = _address(item.get("to"), item.get("destination_chain") or item.get("chain") or chain)
         if not frm or not to:
             continue
         if frm in wallet_set or to in wallet_set:
@@ -212,5 +218,8 @@ def identify_suspicious_path(evidence: List[Dict[str, Any]], wallets: List[str])
                 path.append(to)
             current = to
     if current is None and evidence:
-        path = [str(evidence[0].get("from") or '').lower(), str(evidence[0].get("to") or '').lower()]
+        path = [
+            _address(evidence[0].get("from"), evidence[0].get("source_chain") or evidence[0].get("chain") or chain),
+            _address(evidence[0].get("to"), evidence[0].get("destination_chain") or evidence[0].get("chain") or chain),
+        ]
     return path

@@ -1,7 +1,9 @@
 from typing import List, Dict, Any
 
+from backend.services.address_validator import normalize_address
 
-def apply_fifo_attribution(txs: List[Dict[str, Any]], suspect_wallets: List[str]):
+
+def apply_fifo_attribution(txs: List[Dict[str, Any]], suspect_wallets: List[str], chain: str = "ETH"):
     """Apply the FIFO attribution from the build doc.
 
     txs: list of normalized transactions sorted by timestamp asc.
@@ -11,17 +13,18 @@ def apply_fifo_attribution(txs: List[Dict[str, Any]], suspect_wallets: List[str]
     evidence_list: list of dicts describing transactions and traceable amounts
     """
     # Normalize addresses
-    initial_suspects = set([s.lower() for s in suspect_wallets])
+    initial_suspects = {normalize_address(s, chain) for s in suspect_wallets}
     suspected_balance: Dict[str, float] = {}
     annotated = []
     evidence = []
 
     # Ensure timestamps order; if missing, assume incoming order
-    sorted_txs = sorted(txs, key=lambda x: x.get("timestamp", ""))
+    sorted_txs = sorted(txs, key=lambda x: x.get("timestamp") or "")
 
     for tx in sorted_txs:
-        frm = (tx.get("from") or "").lower()
-        to = (tx.get("to") or "").lower()
+        tx_chain = tx.get("source_chain") or tx.get("chain") or chain
+        frm = normalize_address(tx.get("from"), tx_chain)
+        to = normalize_address(tx.get("to"), tx_chain)
         try:
             amt = float(tx.get("amount", 0.0))
         except Exception:
@@ -56,7 +59,11 @@ def apply_fifo_attribution(txs: List[Dict[str, Any]], suspect_wallets: List[str]
             "unclassified_amount": unclassified,
             "tx_hash": tx.get("tx_hash"),
             "timestamp": tx.get("timestamp"),
-            "block": tx.get("block")
+            "block": tx.get("block"),
+            "chain": tx.get("chain", "ETH"),
+            "source_chain": tx.get("source_chain") or tx.get("chain", "ETH"),
+            "destination_chain": tx.get("destination_chain") or tx.get("chain", "ETH"),
+            "cross_chain_boundary": bool(tx.get("cross_chain_boundary", False)),
         })
 
     return evidence, annotated

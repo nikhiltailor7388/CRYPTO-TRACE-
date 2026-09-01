@@ -5,7 +5,7 @@ import networkx as nx
 
 
 def build_transaction_graph(transactions: Iterable[dict]) -> nx.DiGraph:
-    graph = nx.DiGraph()
+    graph = nx.MultiDiGraph()
     for tx in transactions:
         frm = str(tx.get("from") or "").lower()
         to = str(tx.get("to") or "").lower()
@@ -16,6 +16,7 @@ def build_transaction_graph(transactions: Iterable[dict]) -> nx.DiGraph:
         graph.add_edge(
             frm,
             to,
+            key=tx.get("tx_hash") or f"edge-{graph.number_of_edges()}",
             amount=float(tx.get("amount") or 0.0),
             asset=tx.get("asset", "ETH"),
             tx_hash=tx.get("tx_hash"),
@@ -48,12 +49,14 @@ def bounded_trace(graph: nx.DiGraph, start_wallets: List[str], max_hops: int = 3
                 continue
             for succ in successors:
                 data = graph.get_edge_data(node, succ)
-                if not isinstance(data, dict):
-                    continue
-                amount = float(data.get("amount") or 0.0)
-                nodes.add(node)
-                nodes.add(succ)
-                edges.append((node, succ, amount, data.get("tx_hash")))
+                records = data.values() if graph.is_multigraph() else [data]
+                for record in records:
+                    if not isinstance(record, dict):
+                        continue
+                    amount = float(record.get("amount") or 0.0)
+                    nodes.add(node)
+                    nodes.add(succ)
+                    edges.append((node, succ, amount, record.get("tx_hash")))
                 if succ not in visited:
                     next_frontier.append(succ)
         frontier = next_frontier

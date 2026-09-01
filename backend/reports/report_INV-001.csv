@@ -1,0 +1,2 @@
+tx_hash,from,to,amount,asset,value_at_tx_time_usd,timestamp,vasp,confidence,explorer_url,risk_rule,chain,source_chain,destination_chain,continuation_status
+0x80c5565917ba415247b432ffe1b207534c3b201c278b16c4c247f3cc1228d677,0x300773969b499b9768267e0c5a049f7751de79e7,0x9af7da818f366c6c5d6d06010966370533a4a7d9,0.0005,ETH,historical price unavailable,2026-09-01T18:50:23Z,UNKNOWN,UNKNOWN,https://etherscan.io/tx/0x80c5565917ba415247b432ffe1b207534c3b201c278b16c4c247f3cc1228d677,suspicious_flow,ETH,ETH,ETH,

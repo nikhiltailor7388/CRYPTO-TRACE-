@@ -14,12 +14,12 @@ def summarize_graph(graph: Any, wallet_addresses: Iterable[str]) -> Dict[str, An
         if node in wallet_set:
             continue
         if degree >= 3:
-            suspicious_nodes.append({"address": node, "degree": degree, "weight": round(sum(v.get("weight", 0) for _, _, v in graph.edges(node, data=True)), 4)})
+            suspicious_nodes.append({"address": node, "degree": degree, "weight": round(sum(v.get("amount", 0) for _, _, v in graph.edges(node, data=True)), 4)})
 
     suspicious_nodes.sort(key=lambda item: item["degree"], reverse=True)
     largest_outflow = max(
         (
-            {"address": source, "total": round(sum(data.get("weight", 0) for _, _, data in graph.edges(source, data=True)), 4)}
+            {"address": source, "total": round(sum(data.get("amount", 0) for _, _, data in graph.out_edges(source, data=True)), 4)}
             for source in nodes
             if source not in wallet_set
         ),

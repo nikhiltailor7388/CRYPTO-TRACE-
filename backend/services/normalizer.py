@@ -28,15 +28,20 @@ def normalize_etherscan_raw(raw_txs: List[Dict[str, Any]]) -> List[Dict[str, Any
         elif ts and ts.isdigit():
             from datetime import datetime
             ts = datetime.utcfromtimestamp(int(ts)).isoformat() + 'Z'
+        source_chain = r.get('source_chain') or r.get('chain') or 'ETH'
+        destination_chain = r.get('destination_chain') or source_chain
         out.append({
             'tx_hash': tx_hash,
             'from': frm,
             'to': to,
             'amount': amt,
-            'asset': r.get('tokenSymbol') or 'ETH',
+            'asset': r.get('tokenSymbol') or r.get('asset') or 'ETH',
             'timestamp': ts,
             'block': int(r.get('blockNumber')) if r.get('blockNumber') else None,
-            'chain': 'ETH',
-            'source_url': f"https://etherscan.io/tx/{tx_hash}" if tx_hash else None
+            'chain': source_chain,
+            'source_chain': source_chain,
+            'destination_chain': destination_chain,
+            'cross_chain_boundary': str(source_chain).upper() != str(destination_chain).upper(),
+            'source_url': r.get('source_url') or (f"https://etherscan.io/tx/{tx_hash}" if tx_hash else None)
         })
     return out

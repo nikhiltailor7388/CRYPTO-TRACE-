@@ -31,10 +31,13 @@ def load_vasp_labels():
     return {}
 
 
-def match_vasp_for_address(address: str, vasp_labels: dict):
+def match_vasp_for_address(address: str, vasp_labels: dict, chain: str = None):
     if not address:
         return None
     key = str(address).lower().strip()
     if not key:
         return None
-    return vasp_labels.get(key)
+    match = vasp_labels.get(key)
+    if match and chain and str(match.get("chain") or "").upper() != str(chain).upper():
+        return None
+    return match

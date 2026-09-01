@@ -47,7 +47,7 @@ def generate_csv(case_id: str, evidence_list, out_path: str = None, summary: dic
     summary = summary or {}
     fieldnames = [
         "tx_hash", "from", "to", "amount", "asset", "value_at_tx_time_usd", "timestamp",
-        "vasp", "confidence", "explorer_url", "risk_rule", "chain"
+        "vasp", "confidence", "explorer_url", "risk_rule", "chain", "source_chain", "destination_chain", "continuation_status"
     ]
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -66,6 +66,9 @@ def generate_csv(case_id: str, evidence_list, out_path: str = None, summary: dic
                 "explorer_url": e.get("explorer_url", ""),
                 "risk_rule": e.get("risk_rule", ""),
                 "chain": e.get("chain", summary.get("chain", "ETH")),
+                "source_chain": e.get("source_chain", e.get("chain", summary.get("chain", "ETH"))),
+                "destination_chain": e.get("destination_chain", e.get("chain", summary.get("chain", "ETH"))),
+                "continuation_status": e.get("continuation_status", ""),
             })
     return str(out_path)
 
@@ -94,8 +97,9 @@ def generate_pdf(case_id: str, evidence_list, out_path: str = None, summary: dic
     story.append(Paragraph(f"CryptoTrace - Investigation Report: {case_id}", styles['Title']))
     story.append(Spacer(1, 6))
     story.append(Paragraph(f"Fraud probability: {fraud_probability}% | Graph hash: {graph_hash}", styles['Normal']))
-    story.append(Paragraph(f"Total value: {total_value} ETH | Traceable: {traceable_value} ETH | Unclassified: {unclassified_value} ETH", styles['Normal']))
-    story.append(Paragraph("This report identifies the likely exchange endpoint and supporting evidence for a legal request. It does not identify a real person — that requires the exchange's own KYC process, which is outside this system's scope.", styles['Normal']))
+    asset = summary.get("chain", "ETH")
+    story.append(Paragraph(f"Total value: {total_value} {asset} | Traceable: {traceable_value} {asset} | Unclassified: {unclassified_value} {asset}", styles['Normal']))
+    story.append(Paragraph(legal_notice, styles['Normal']))
     story.append(Spacer(1, 10))
 
     data = [["Source wallet", "Destination wallet", "Tx hash", "Amount", "Asset", "Timestamp", "Value at tx time (USD)", "VASP", "Explorer"]]

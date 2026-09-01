@@ -23,17 +23,17 @@ type AuthState = {
 
 export default function App(){
   const [data, setData] = useState<any>(null)
-  const [language, setLanguage] = useState<'en' | 'hi'>('en')
   const [auth, setAuth] = useState<AuthState | null>(() => {
     const raw = localStorage.getItem(STORAGE_KEY)
     return raw ? JSON.parse(raw) : null
   })
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login')
-  const [authForm, setAuthForm] = useState({ email: 'nikhiltailor7388@gmail.com', password: 'Password123!', full_name: 'Nikhil Tailor' })
+  const [authForm, setAuthForm] = useState({ email: '', password: '', full_name: '' })
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [caseList, setCaseList] = useState<any[]>([])
   const [casesLoading, setCasesLoading] = useState(false)
+  const [caseError, setCaseError] = useState('')
 
   useEffect(() => {
     if (auth?.token) {
@@ -47,14 +47,14 @@ export default function App(){
 
   const loadCases = async (token: string) => {
     setCasesLoading(true)
+    setCaseError('')
     try {
       const res = await fetch('/cases', { headers: { Authorization: 'Bearer ' + token } })
       const payload = await readJsonResponse(res)
       if (!res.ok) throw new Error(payload?.detail || 'Failed to load cases')
       setCaseList(payload.cases || [])
     } catch (err: any) {
-      console.error(err)
-      setAuthError(err.message || 'Failed to load case history')
+      setCaseError(err.message || 'Failed to load case history')
     } finally {
       setCasesLoading(false)
     }
@@ -92,9 +92,14 @@ export default function App(){
       const payload = await readJsonResponse(res)
       if (!res.ok) throw new Error(payload?.detail || 'Failed to load case')
       setData(payload)
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      setCaseError(err.message || 'Failed to load case')
     }
+  }
+
+  const handleTraceComplete = (result: any) => {
+    if (auth?.token) loadCases(auth.token)
+    setData(result)
   }
 
   const summary = useMemo(() => {
@@ -110,7 +115,7 @@ export default function App(){
       riskScore: data?.summary?.fraud_probability ?? data?.summary?.risk_score ?? 0,
       probability: data?.risk_profile?.overall_probability ?? data?.summary?.fraud_probability ?? data?.summary?.risk_score ?? 0,
       caseId: data?.case_id || 'CASE-001',
-      dataSource: data?.data_source || 'cached',
+      dataSource: data?.data_source || 'no trace yet',
       graphHash: data?.graph_hash || 'N/A',
       fraudster: data?.risk_profile?.fraudster_candidate || 'Not identified',
       suspiciousPath: data?.risk_profile?.suspicious_path || [],
@@ -118,6 +123,9 @@ export default function App(){
       graphMetrics: data?.graph_metrics || {node_count: 0, edge_count: 0, max_degree: 0},
       legalNotice: data?.legal_notice || 'This report identifies the likely exchange endpoint and supporting evidence for a legal request. It does not identify a real person — that requires the exchange\'s own KYC process, which is outside this system\'s scope.',
       checksum: data?.evidence_checksum || 'N/A',
+      partial: Boolean(data?.summary?.partial),
+      partialReasons: data?.summary?.partial_reasons || [],
+      asset: data?.chain === 'TRON' ? 'TRX' : 'ETH',
     }
   }, [data])
 
@@ -144,7 +152,8 @@ export default function App(){
       vasp: row.vasp,
       explorer_url: row.explorer_url,
     }))
-    const csv = [Object.keys(rows[0] || {}).join(','), ...rows.map((r:any) => Object.values(r).join(','))].join('\n')
+    const cell = (value: unknown) => `"${String(value ?? '').replaceAll('"', '""')}"`
+    const csv = [Object.keys(rows[0] || {}).map(cell).join(','), ...rows.map((r:any) => Object.values(r).map(cell).join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -157,16 +166,13 @@ export default function App(){
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
+        <div className="brand-lockup">
           <div className="eyebrow">Blockchain investigations</div>
           <h1>CryptoTrace</h1>
+          <p>Trace, preserve, and review public on-chain evidence.</p>
         </div>
         <div className="topbar-actions">
-          <div className="status-pill">{summary.dataSource.toUpperCase()} DATA SOURCE</div>
-          <div className="lang-toggle">
-            <button className={language === 'en' ? 'toggle active' : 'toggle'} onClick={() => setLanguage('en')}>EN</button>
-            <button className={language === 'hi' ? 'toggle active' : 'toggle'} onClick={() => setLanguage('hi')}>HI</button>
-          </div>
+          <div className={`status-pill ${data ? 'active' : ''}`}><span className="status-dot" />{data ? `${summary.dataSource} data` : 'Ready for trace'}</div>
           {auth ? (
             <button className="ghost-btn" onClick={() => setAuth(null)}>Logout</button>
           ) : null}
@@ -190,20 +196,21 @@ export default function App(){
                   <span className="eyebrow">Case history</span>
                   <h3>Saved investigations</h3>
                 </div>
-                {casesLoading ? <div className="empty-table">Loading?</div> : (
+                {caseError ? <div className="error-banner compact-error">{caseError}</div> : null}
+                {casesLoading ? <div className="empty-table">Refreshing saved investigations…</div> : (
                   caseList.length ? (
                     <div className="case-list">
                       {caseList.map((item) => (
-                        <button key={item.case_id} className="case-item" onClick={() => handleLoadCase(item.case_id)}>
-                          <span>{item.case_id}</span>
-                          <small>{item.summary?.fraud_probability ?? item.risk_score ?? 0}% risk</small>
+                        <button key={item.case_id} className={`case-item ${data?.case_id === item.case_id ? 'active' : ''}`} onClick={() => handleLoadCase(item.case_id)}>
+                          <span className="case-item-id">{item.case_id}</span>
+                          <span className="case-item-meta"><small>{item.summary?.chain || 'CHAIN'}</small><strong>{item.summary?.fraud_probability ?? item.risk_score ?? 0}% risk</strong></span>
                         </button>
                       ))}
                     </div>
                   ) : <div className="empty-table">No saved cases yet. Run a trace to create a case.</div>
                 )}
               </div>
-              <CaseForm onResult={setData} authToken={auth.token} />
+              <CaseForm onResult={setData} onStart={() => setData(null)} onComplete={handleTraceComplete} authToken={auth.token} />
             </>
           ) : (
             <div className="auth-card">
@@ -243,33 +250,44 @@ export default function App(){
               <h3>Investigation workspace</h3>
               <p>Submit a wallet to trace outbound flow, detect downstream concentration points, and build a structured evidence trail for investigative review.</p>
               <ul>
-                <li>Live EVM transaction retrieval</li>
-                <li>Deterministic graph attribution</li>
-                <li>Risk scoring and report generation</li>
+                <li>Live ETH and TRON retrieval</li>
+                <li>Bounded evidence-backed flow analysis</li>
+                <li>Risk, VASP, and report review</li>
               </ul>
             </div>
           ) : (
             <>
+              <section className="result-hero panel">
+                <div>
+                  <span className="eyebrow">Investigation result</span>
+                  <h2>{data.chain} trace · {summary.caseId}</h2>
+                  <p>{data.wallets?.[0]?.address || data.source_wallet || 'Wallet'} · {data.provider || 'Provider'} · {summary.dataSource}</p>
+                </div>
+                <div className={`risk-orb risk-${summary.probability >= 70 ? 'high' : summary.probability >= 40 ? 'medium' : 'low'}`}>
+                  <span>Risk score</span><strong>{summary.probability}%</strong>
+                </div>
+              </section>
+
               <div className="stats-grid">
                 <div className="stat-card panel">
                   <span className="label">Total value</span>
-                  <strong>{summary.totalValue.toFixed(3)} ETH</strong>
+                  <strong>{summary.totalValue.toFixed(3)} {summary.asset}</strong>
                 </div>
                 <div className="stat-card panel">
                   <span className="label">Traceable</span>
-                  <strong>{summary.traceable.toFixed(3)} ETH</strong>
+                  <strong>{summary.traceable.toFixed(3)} {summary.asset}</strong>
                 </div>
                 <div className="stat-card panel">
                   <span className="label">Unclassified</span>
-                  <strong>{summary.unclassified.toFixed(3)} ETH</strong>
+                  <strong>{summary.unclassified.toFixed(3)} {summary.asset}</strong>
                 </div>
                 <div className="stat-card panel accent-card">
-                  <span className="label">Fraud probability</span>
-                  <strong>{summary.probability}%</strong>
+                  <span className="label">Trace confidence</span>
+                  <strong>{summary.riskFactors.some((factor:any) => factor.confidence === 'high') ? 'High' : summary.riskFactors.some((factor:any) => factor.confidence === 'medium') ? 'Medium' : 'Low'}</strong>
                 </div>
               </div>
 
-              <div className="meta-row">
+              <div className="case-actions panel">
                 <div className="panel small-panel">
                   <span className="label">Case ID</span>
                   <strong>{summary.caseId}</strong>
@@ -279,25 +297,25 @@ export default function App(){
                   <strong>{summary.vaspMatches}</strong>
                 </div>
                 <div className="panel small-panel">
-                  <span className="label">Fraudster candidate</span>
+                  <span className="label">{summary.partial ? 'Candidate (partial trace)' : 'Fraudster candidate'}</span>
                   <strong>{summary.fraudster ? summary.fraudster.slice(0, 12) + '?' : 'Unknown'}</strong>
                 </div>
                 <div className="panel small-panel">
-                  <span className="label">Graph hash</span>
-                  <strong>{summary.graphHash.slice(0, 12)}</strong>
+                  <span className="label">Evidence checksum</span>
+                  <strong>{summary.graphHash.slice(0, 12)}…</strong>
                 </div>
                 <div className="panel small-panel">
                   <span className="label">Graph metrics</span>
                   <strong>{summary.graphMetrics.node_count} nodes / {summary.graphMetrics.edge_count} edges</strong>
                 </div>
                 <a className="download-link" href={data.report_url || `/reports/${data.case_id}.pdf`} target="_blank" rel="noreferrer">
-                  Download PDF report
+                  PDF report
                 </a>
                <a className="download-link" href={data.csv_report_url || `/reports/${data.case_id}.csv`} target="_blank" rel="noreferrer">
-                  Download CSV report
+                  CSV report
                 </a>
-               <button className="download-link" type="button" onClick={downloadEvidenceJson}>Download Evidence (JSON)</button>
-               <button className="download-link" type="button" onClick={downloadEvidenceCsv}>Download Evidence (CSV)</button>
+               <button className="download-link" type="button" onClick={downloadEvidenceJson}>Evidence JSON</button>
+               <button className="download-link" type="button" onClick={downloadEvidenceCsv}>Evidence CSV</button>
               </div>
 
               <div className="panel info-panel">
@@ -306,6 +324,7 @@ export default function App(){
                   <h3>Investigator notice</h3>
                 </div>
                 <p>{summary.legalNotice}</p>
+                {summary.partial ? <div className="error-banner">Partial trace: {summary.partialReasons.join(', ')}. Results are bounded and should not be treated as a complete flow.</div> : null}
                 <div className="checksum-box">Evidence checksum: {summary.checksum}</div>
               </div>
 

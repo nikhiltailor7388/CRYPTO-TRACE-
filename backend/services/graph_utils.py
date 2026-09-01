@@ -1,17 +1,22 @@
 import networkx as nx
 from typing import List, Dict, Any
 
+from backend.services.address_validator import normalize_address
+
 
 def build_graph_from_txs(txs: List[Dict[str, Any]]):
-    G = nx.DiGraph()
+    # A pair of wallets may transact more than once. A DiGraph overwrites the
+    # prior transaction and causes graph/evidence disagreement.
+    G = nx.MultiDiGraph()
     for tx in txs:
-        frm = tx["from"].lower()
-        to = tx["to"].lower()
+        chain = tx.get("source_chain") or tx.get("chain") or "ETH"
+        frm = normalize_address(tx["from"], chain)
+        to = normalize_address(tx["to"], chain)
         tx_hash = tx.get("tx_hash")
         G.add_node(frm)
         G.add_node(to)
         # attach edge data keyed by tx_hash
-        G.add_edge(frm, to, key=tx_hash, **{
+        G.add_edge(frm, to, key=tx_hash or f"edge-{G.number_of_edges()}", **{
             "amount": tx["amount"],
             "asset": tx.get("asset", "ETH"),
             "timestamp": tx.get("timestamp"),
@@ -22,7 +27,12 @@ def build_graph_from_txs(txs: List[Dict[str, Any]]):
 
 
 def bfs_subgraph_from_graph(G, start_wallets, max_hops=3):
-    start = [s.lower() for s in start_wallets]
+    # The graph retains TRON's case-sensitive Base58 addresses. EVM starts
+    # still resolve case-insensitively for historical inputs.
+    start = []
+    for wallet in start_wallets:
+        candidate = str(wallet).strip()
+        start.append(candidate if candidate in G else candidate.lower())
     visited = set()
     frontier = set(start)
     edges = set()
@@ -37,17 +47,11 @@ def bfs_subgraph_from_graph(G, start_wallets, max_hops=3):
                 nodes.add(u)
                 # collect edges (u,v)
                 data = G.get_edge_data(u, v)
-                # edge data may be dict or nested for multi-edges
-                if isinstance(data, dict):
-                    # if nested dict of parallel edges, grab keys
-                    try:
-                        # networkx DiGraph stores attr dict
-                        txh = data.get('tx_hash')
-                        edges.add((u, v, txh))
-                    except Exception:
-                        edges.add((u, v, None))
-                else:
-                    edges.add((u, v, None))
+                if G.is_multigraph():
+                    for _, attributes in (data or {}).items():
+                        edges.add((u, v, attributes.get("tx_hash")))
+                elif isinstance(data, dict):
+                    edges.add((u, v, data.get('tx_hash')))
                 if v not in visited:
                     next_frontier.add(v)
         visited.update(frontier)
@@ -68,6 +72,27 @@ def build_graph_payload(nodes: set, edges: set, evidence: List[Dict[str, Any]], 
         for member in cluster.get('members', []) or []:
             cluster_map[str(member).lower()] = cluster.get('id')
 
+    # Derive depth from the bounded, evidence-backed edge set. The prior UI
+    # label used sorted-node position, which made a real multi-hop branch look
+    # like arbitrary nodes rather than an investigation path.
+    node_texts = {str(node) for node in nodes}
+    roots = {
+        str(wallet).strip() if str(wallet).strip() in node_texts else str(wallet).strip().lower()
+        for wallet in wallet_targets if wallet
+    }
+    depth_by_node = {root: 0 for root in roots if root in node_texts}
+    outgoing = {}
+    for source, target, _ in edges:
+        outgoing.setdefault(str(source), set()).add(str(target))
+    frontier = list(depth_by_node)
+    while frontier:
+        source = frontier.pop(0)
+        for target in outgoing.get(source, set()):
+            next_depth = depth_by_node[source] + 1
+            if target not in depth_by_node or next_depth < depth_by_node[target]:
+                depth_by_node[target] = next_depth
+                frontier.append(target)
+
     victim_set = {str(w or '').lower() for w in wallet_targets if w}
     vasp_set = set()
     for item in evidence:
@@ -77,9 +102,10 @@ def build_graph_payload(nodes: set, edges: set, evidence: List[Dict[str, Any]], 
             vasp_set.add(str(item.get('from') or '').lower())
 
     node_list = []
-    for idx, node_id in enumerate(sorted(nodes)):
+    for node_id in sorted(nodes):
         node_id_text = str(node_id)
         lower_id = node_id_text.lower()
+        hop_depth = depth_by_node.get(node_id_text)
         total_in = sum(float(item.get('amount') or 0) for item in evidence if str(item.get('to') or '').lower() == lower_id)
         total_out = sum(float(item.get('amount') or 0) for item in evidence if str(item.get('from') or '').lower() == lower_id)
         if lower_id in victim_set:
@@ -93,13 +119,14 @@ def build_graph_payload(nodes: set, edges: set, evidence: List[Dict[str, Any]], 
             label = 'Cluster Member'
         else:
             node_type = 'intermediate'
-            label = 'Intermediate Wallet - Hop ' + str(idx + 1)
+            label = 'Intermediate Wallet' + (f' - Hop {hop_depth}' if hop_depth is not None else '')
 
         node_list.append({
             'id': node_id_text,
             'label': label,
             'type': node_type,
             'cluster_id': cluster_map.get(lower_id),
+            'hop_depth': hop_depth,
             'total_in': round(total_in, 6),
             'total_out': round(total_out, 6),
         })
@@ -120,6 +147,10 @@ def build_graph_payload(nodes: set, edges: set, evidence: List[Dict[str, Any]], 
             'timestamp': (tx_data or {}).get('timestamp') or '',
             'edge_type': 'direct',
             'confidence': None,
+            'source_chain': (tx_data or {}).get('source_chain') or (tx_data or {}).get('chain') or 'ETH',
+            'destination_chain': (tx_data or {}).get('destination_chain') or (tx_data or {}).get('chain') or 'ETH',
+            'continuation_status': (tx_data or {}).get('continuation_status'),
+            'hop': (depth_by_node.get(source_text) + 1) if source_text in depth_by_node else None,
         }
         edge_list.append(edge)
 
