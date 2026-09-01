@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api import auth, cases, reports, routes, trace_impl
-from backend.services.sqlite_store import ensure_seed_users
+from api import auth, cases, reports, routes, trace_impl
+from services.sqlite_store import ensure_seed_users
 
 load_dotenv()
 
