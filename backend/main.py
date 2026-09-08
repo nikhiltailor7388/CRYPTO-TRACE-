@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api import auth, cases, reports, routes, trace_impl
+from backend.config import settings
 from backend.services.sqlite_store import ensure_seed_users
 load_dotenv()
 
@@ -20,7 +21,7 @@ ensure_seed_users()
 # Allow CORS for frontend dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=list(settings.cors_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

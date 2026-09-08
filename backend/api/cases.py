@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.services.auth import decode_token, get_bearer_token
-from backend.services.sqlite_store import get_user_by_id, list_case_metadata, load_case
+from backend.services.sqlite_store import get_user_by_id, list_case_metadata
+from backend.services.persistence import load_case
 
 router = APIRouter()
 security = HTTPBearer(auto_error=False)
@@ -36,7 +37,7 @@ def list_cases(user: Optional[Dict[str, Any]] = Depends(current_user_or_none)):
             "created_at": row.get("created_at"),
             "updated_at": row.get("updated_at"),
             "summary": payload.get("summary", {}),
-            "risk_score": payload.get("summary", {}).get("fraud_probability", payload.get("summary", {}).get("risk_score", 0)),
+            "risk_score": payload.get("summary", {}).get("risk_score"),
         })
     return {"cases": result}
 

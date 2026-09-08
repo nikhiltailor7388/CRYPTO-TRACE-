@@ -24,6 +24,11 @@ class Settings:
     trace_timeout_seconds: int = int(os.getenv("TRACE_TIMEOUT_SECONDS", "45"))
     max_historical_price_lookups: int = int(os.getenv("MAX_HISTORICAL_PRICE_LOOKUPS", "10"))
     tronscan_page_size: int = int(os.getenv("TRONSCAN_PAGE_SIZE", "100"))
+    cors_origins: tuple[str, ...] = tuple(
+        origin.strip() for origin in os.getenv(
+            "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+        ).split(",") if origin.strip()
+    )
 
 
 settings = Settings()

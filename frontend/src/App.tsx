@@ -104,16 +104,21 @@ export default function App(){
 
   const summary = useMemo(() => {
     const evidence = data?.evidence || []
-    const totalValue = evidence.reduce((sum:any, row:any) => sum + Number(row.amount || 0), 0)
-    const traceable = evidence.reduce((sum:any, row:any) => sum + Number(row.traceable_amount || 0), 0)
-    const unclassified = evidence.reduce((sum:any, row:any) => sum + Number(row.unclassified_amount || 0), 0)
+    const totalValue = Number(data?.summary?.total_value ?? evidence.reduce((sum:any, row:any) => sum + Number(row.amount || 0), 0))
+    const traceable = Number(data?.summary?.traceable_value ?? evidence.reduce((sum:any, row:any) => sum + Number(row.traceable_amount || 0), 0))
+    const unclassified = Number(data?.summary?.unclassified_value ?? evidence.reduce((sum:any, row:any) => sum + Number(row.unclassified_amount || 0), 0))
     return {
       totalValue,
       traceable,
       unclassified,
+      evidenceCount: evidence.length,
+      hops: Number(data?.summary?.hops_traced ?? data?.summary?.trace_depth_reached ?? 0),
       vaspMatches: data?.vasp_matches?.length || 0,
-      riskScore: data?.summary?.fraud_probability ?? data?.summary?.risk_score ?? 0,
-      probability: data?.risk_profile?.overall_probability ?? data?.summary?.fraud_probability ?? data?.summary?.risk_score ?? 0,
+      vaspEntities: Array.isArray(data?.vasp_matches) ? data.vasp_matches : [],
+      probability: data?.summary?.risk_score ?? data?.risk_profile?.risk_score ?? null,
+      riskLevel: data?.summary?.risk_level ?? data?.risk_profile?.risk_level ?? 'UNKNOWN',
+      riskEvidenceState: data?.summary?.risk_evidence_state ?? data?.risk_profile?.evidence_state ?? 'insufficient',
+      traceConfidence: data?.summary?.trace_confidence ?? data?.risk_profile?.trace_confidence ?? 'unknown',
       caseId: data?.case_id || 'CASE-001',
       dataSource: data?.data_source || 'no trace yet',
       graphHash: data?.graph_hash || 'N/A',
@@ -121,6 +126,7 @@ export default function App(){
       suspiciousPath: data?.risk_profile?.suspicious_path || [],
       riskFactors: data?.risk_profile?.risk_factors || [],
       graphMetrics: data?.graph_metrics || {node_count: 0, edge_count: 0, max_degree: 0},
+      destinations: Array.isArray(data?.destination_wallets) ? data.destination_wallets : [],
       legalNotice: data?.legal_notice || 'This report identifies the likely exchange endpoint and supporting evidence for a legal request. It does not identify a real person — that requires the exchange\'s own KYC process, which is outside this system\'s scope.',
       checksum: data?.evidence_checksum || 'N/A',
       partial: Boolean(data?.summary?.partial),
@@ -203,7 +209,7 @@ export default function App(){
                       {caseList.map((item) => (
                         <button key={item.case_id} className={`case-item ${data?.case_id === item.case_id ? 'active' : ''}`} onClick={() => handleLoadCase(item.case_id)}>
                           <span className="case-item-id">{item.case_id}</span>
-                          <span className="case-item-meta"><small>{item.summary?.chain || 'CHAIN'}</small><strong>{item.summary?.fraud_probability ?? item.risk_score ?? 0}% risk</strong></span>
+                          <span className="case-item-meta"><small>{item.summary?.chain || 'CHAIN'}</small><strong>{item.summary?.risk_score == null ? 'N/A risk' : `${item.summary.risk_score}% risk`}</strong></span>
                         </button>
                       ))}
                     </div>
@@ -263,31 +269,45 @@ export default function App(){
                   <h2>{data.chain} trace · {summary.caseId}</h2>
                   <p>{data.wallets?.[0]?.address || data.source_wallet || 'Wallet'} · {data.provider || 'Provider'} · {summary.dataSource}</p>
                 </div>
-                <div className={`risk-orb risk-${summary.probability >= 70 ? 'high' : summary.probability >= 40 ? 'medium' : 'low'}`}>
-                  <span>Risk score</span><strong>{summary.probability}%</strong>
+                <div className={`risk-orb risk-${(summary.probability ?? 0) >= 70 ? 'high' : (summary.probability ?? 0) >= 40 ? 'medium' : 'low'}`}>
+                  <span>Risk score</span><strong>{summary.probability === null ? 'N/A' : `${summary.probability}%`}</strong><em>{summary.riskLevel}</em>
                 </div>
               </section>
 
               <div className="stats-grid">
                 <div className="stat-card panel">
-                  <span className="label">Total value</span>
+                  <span className="label">Observed amount</span>
                   <strong>{summary.totalValue.toFixed(3)} {summary.asset}</strong>
                 </div>
                 <div className="stat-card panel">
-                  <span className="label">Traceable</span>
-                  <strong>{summary.traceable.toFixed(3)} {summary.asset}</strong>
+                  <span className="label">Evidence / hops</span>
+                  <strong>{summary.evidenceCount} / {summary.hops}</strong>
                 </div>
                 <div className="stat-card panel">
-                  <span className="label">Unclassified</span>
-                  <strong>{summary.unclassified.toFixed(3)} {summary.asset}</strong>
+                  <span className="label">VASP/entity matches</span>
+                  <strong>{summary.vaspMatches}</strong>
                 </div>
                 <div className="stat-card panel accent-card">
                   <span className="label">Trace confidence</span>
-                  <strong>{summary.riskFactors.some((factor:any) => factor.confidence === 'high') ? 'High' : summary.riskFactors.some((factor:any) => factor.confidence === 'medium') ? 'Medium' : 'Low'}</strong>
+                  <strong>{summary.traceConfidence}</strong>
                 </div>
               </div>
 
-              <div className="case-actions panel">
+              <section className="panel flow-summary" aria-label="Observed money flow">
+                <div className="panel-header inline-header">
+                  <span className="eyebrow">Observed flow</span>
+                  <h3>Source to recorded downstream activity</h3>
+                </div>
+                <div className="flow-steps">
+                  <div className="flow-step source"><span>Source wallet</span><code>{data.wallets?.[0]?.address || data.source_wallet || 'Unavailable'}</code></div>
+                  <div className="flow-arrow" aria-hidden="true">→</div>
+                  <div className="flow-step"><span>Observed hops</span><strong>{summary.hops} hop{summary.hops === 1 ? '' : 's'} · {summary.evidenceCount} transactions</strong></div>
+                  <div className="flow-arrow" aria-hidden="true">→</div>
+                  <div className="flow-step destination"><span>Recorded downstream wallet{summary.destinations.length === 1 ? '' : 's'}</span><code>{summary.destinations.length ? summary.destinations.join(', ') : 'No endpoint recorded'}</code></div>
+                </div>
+              </section>
+
+              <div className="case-actions panel" aria-label="Case exports">
                 <div className="panel small-panel">
                   <span className="label">Case ID</span>
                   <strong>{summary.caseId}</strong>
@@ -297,8 +317,8 @@ export default function App(){
                   <strong>{summary.vaspMatches}</strong>
                 </div>
                 <div className="panel small-panel">
-                  <span className="label">{summary.partial ? 'Candidate (partial trace)' : 'Fraudster candidate'}</span>
-                  <strong>{summary.fraudster ? summary.fraudster.slice(0, 12) + '?' : 'Unknown'}</strong>
+                  <span className="label">Investigative lead</span>
+                  <strong>{summary.fraudster && summary.fraudster !== 'Not identified' ? `${summary.fraudster.slice(0, 12)}…` : 'Not identified'}</strong>
                 </div>
                 <div className="panel small-panel">
                   <span className="label">Evidence checksum</span>
@@ -309,7 +329,10 @@ export default function App(){
                   <strong>{summary.graphMetrics.node_count} nodes / {summary.graphMetrics.edge_count} edges</strong>
                 </div>
                 <a className="download-link" href={data.report_url || `/reports/${data.case_id}.pdf`} target="_blank" rel="noreferrer">
-                  PDF report
+                  Investigator PDF
+                </a>
+                <a className="download-link" href={`/reports/${data.case_id}.victim.pdf`} target="_blank" rel="noreferrer">
+                  Victim-friendly report
                 </a>
                <a className="download-link" href={data.csv_report_url || `/reports/${data.case_id}.csv`} target="_blank" rel="noreferrer">
                   CSV report
@@ -318,12 +341,31 @@ export default function App(){
                <button className="download-link" type="button" onClick={downloadEvidenceCsv}>Evidence CSV</button>
               </div>
 
+              <section className="panel vasp-panel">
+                <div className="panel-header inline-header">
+                  <span className="eyebrow">Entity findings</span>
+                  <h3>VASP / service matches</h3>
+                </div>
+                {summary.vaspEntities.length ? (
+                  <div className="vasp-grid">
+                    {summary.vaspEntities.map((match: any) => (
+                      <div className="vasp-card" key={match.entity}>
+                        <strong>{match.entity}</strong>
+                        <span>{match.matches ?? 0} observed transaction match{Number(match.matches) === 1 ? '' : 'es'}</span>
+                        <small>Confidence: {match.confidence || 'UNKNOWN'}{match.amount !== undefined ? ` · ${Number(match.amount).toFixed(3)} ${summary.asset}` : ''}</small>
+                      </div>
+                    ))}
+                  </div>
+                ) : <div className="empty-table">No VASP or service entity match was returned for the recorded evidence.</div>}
+              </section>
+
               <div className="panel info-panel">
                 <div className="panel-header inline-header">
                   <span className="eyebrow">Legal scope</span>
                   <h3>Investigator notice</h3>
                 </div>
                 <p>{summary.legalNotice}</p>
+                {summary.riskEvidenceState === 'insufficient' ? <div className="empty-table">Insufficient evidence for a reliable risk assessment. Trace confidence is reported separately.</div> : null}
                 {summary.partial ? <div className="error-banner">Partial trace: {summary.partialReasons.join(', ')}. Results are bounded and should not be treated as a complete flow.</div> : null}
                 <div className="checksum-box">Evidence checksum: {summary.checksum}</div>
               </div>
@@ -331,10 +373,11 @@ export default function App(){
               <div className="panel risk-panel">
                 <div className="panel-header inline-header">
                   <span className="eyebrow">Risk layers</span>
-                  <h3>Multi-layer fraud assessment</h3>
+                  <h3>Evidence-based risk assessment</h3>
                 </div>
+                <p className="risk-explainer">Score: {summary.probability === null ? 'not available' : `${summary.probability}/100`} · Level: {summary.riskLevel}. This heuristic is an investigative signal, not proof of fraud or identity.</p>
                 <div className="risk-factors">
-                  {(summary.riskFactors.length ? summary.riskFactors : [{name:'Fallback risk',score:summary.probability}]).map((factor:any) => (
+                  {(summary.riskFactors.length ? summary.riskFactors : [{name:'No risk factors available',score:'N/A'}]).map((factor:any) => (
                     <div className="risk-pill" key={factor.name}>
                       <span>{factor.name}</span>
                       <strong>{factor.score}</strong>
@@ -343,7 +386,7 @@ export default function App(){
                 </div>
                 <div className="suspicious-path-box">
                   <span className="label">Suspicious path</span>
-                  <strong>{summary.suspiciousPath.length ? summary.suspiciousPath.join(' ? ') : 'No definitive path found'}</strong>
+                  <strong>{summary.suspiciousPath.length ? summary.suspiciousPath.join(' → ') : 'No definitive path found'}</strong>
                 </div>
               </div>
 

@@ -37,7 +37,7 @@ class TraceRequest(BaseModel):
     tx_hash: Optional[str] = None
     amount: Optional[float] = None
     currency: Optional[str] = None
-    max_hops: int = Field(3, ge=1, le=5)
+    max_hops: int = Field(3, ge=1, le=3)
     start_date: Optional[str] = None
     end_date: Optional[str] = None
 
@@ -69,8 +69,11 @@ def trace(req: TraceRequest, request: Request):
         if invalid:
             raise HTTPException(status_code=400, detail=f"Invalid wallet address for {req.chain}: {invalid[0]}")
 
+        effective_max_hops = min(int(req.max_hops or 3), 3)
         all_normalized = []
         seen_hashes = set()
+        seen_wallets = set()
+        queued_wallets = set()
         rate_limit_fallback = False
         partial_reasons = []
         trace_started = time.monotonic()
@@ -86,7 +89,10 @@ def trace(req: TraceRequest, request: Request):
             raise HTTPException(status_code=503, detail="Live retrieval is not configured. Set USE_ETHERSCAN=true and ETHERSCAN_API_KEY, or explicitly enable DEMO_MODE=true.")
 
         pending = [(wallet, 0) for wallet in wallet_targets]
+        asset_filter = {"asset": req.currency} if req.currency else {}
         fetched_wallets = set()
+        max_depth_fetched = 0
+        transaction_cap_observed = False
         while pending:
             if time.monotonic() - trace_started >= settings.trace_timeout_seconds:
                 partial_reasons.append("trace_time_limit_reached")
@@ -94,14 +100,16 @@ def trace(req: TraceRequest, request: Request):
             if len(fetched_wallets) >= settings.max_trace_wallets:
                 partial_reasons.append("wallet_limit_reached")
                 break
-            if len(all_normalized) >= settings.max_trace_transactions:
-                partial_reasons.append("transaction_limit_reached")
+            if transaction_cap_observed:
+                partial_reasons.append("application_transaction_limit")
                 break
             w, depth = pending.pop(0)
             wallet_key = normalize_address(w, chain_name)
-            if wallet_key in fetched_wallets or depth >= req.max_hops:
+            if wallet_key in fetched_wallets or depth >= effective_max_hops:
                 continue
             fetched_wallets.add(wallet_key)
+            seen_wallets.add(wallet_key)
+            max_depth_fetched = max(max_depth_fetched, depth)
             try:
                 raw = fetch_transactions(
                     w,
@@ -109,6 +117,7 @@ def trace(req: TraceRequest, request: Request):
                     api_key=api_key,
                     chain=chain_name,
                     tx_hash=req.tx_hash if depth == 0 and wallet_key == normalize_address(wallet_targets[0], chain_name) else None,
+                    **asset_filter,
                 )
             except RuntimeError as exc:
                 if str(exc).startswith("TRONSCAN_RATE_LIMIT"):
@@ -124,12 +133,10 @@ def trace(req: TraceRequest, request: Request):
                     use_cache=True,
                     chain=chain_name,
                     tx_hash=req.tx_hash if depth == 0 and wallet_key == normalize_address(wallet_targets[0], chain_name) else None,
+                    **asset_filter,
                 )
             normalized = normalize_etherscan_raw(raw)
             for tx in normalized:
-                if len(all_normalized) >= settings.max_trace_transactions:
-                    partial_reasons.append("transaction_limit_reached")
-                    break
                 transaction_hash = str(tx.get("tx_hash") or "").lower()
                 if not transaction_hash or transaction_hash in seen_hashes:
                     continue
@@ -138,6 +145,13 @@ def trace(req: TraceRequest, request: Request):
                 # trace budget or become evidence for the outbound flow.
                 if normalize_address(tx.get("from"), tx.get("source_chain") or tx.get("chain") or chain_name) != wallet_key:
                     continue
+                if len(all_normalized) >= settings.max_trace_transactions:
+                    # We have observed an additional qualifying transaction,
+                    # so the configured application safety boundary genuinely
+                    # omitted evidence.
+                    transaction_cap_observed = True
+                    partial_reasons.append("application_transaction_limit")
+                    break
                 timestamp = str(tx.get("timestamp") or "")
                 if req.start_date and (not timestamp or timestamp[:10] < req.start_date):
                     continue
@@ -150,9 +164,22 @@ def trace(req: TraceRequest, request: Request):
                     and tx.get("to")
                     and not tx.get("cross_chain_boundary")
                 ):
-                    pending.append((tx["to"], depth + 1))
+                    next_wallet = normalize_address(tx["to"], tx.get("destination_chain") or tx.get("chain") or chain_name)
+                    next_depth = depth + 1
+                    if next_depth > effective_max_hops:
+                        continue
+                    if next_wallet in queued_wallets or next_wallet in seen_wallets:
+                        continue
+                    queued_wallets.add(next_wallet)
+                    pending.append((tx["to"], next_depth))
 
         partial_reasons = list(dict.fromkeys(partial_reasons))
+        partial_reason_details = {
+            "application_transaction_limit": "The configured application transaction safety limit was reached after additional qualifying transactions were observed.",
+            "wallet_limit_reached": "The configured application wallet safety limit was reached while further wallets remained queued.",
+            "trace_time_limit_reached": "The configured investigation time limit expired before traversal completed.",
+            "max_hop_limit_reached": "The trace was intentionally bounded to the configured 3-hop maximum and was stopped before any deeper wallet analysis.",
+        }
 
         if req.tx_hash and use_live_data and not any(
             str(tx.get("tx_hash") or "").lower() == str(req.tx_hash).lower()
@@ -300,8 +327,9 @@ def trace(req: TraceRequest, request: Request):
         total_value = sum(float(item.get("amount", 0) or 0) for item in evidence)
         traceable_value = sum(float(item.get("traceable_amount", 0) or 0) for item in evidence)
         unclassified_value = sum(float(item.get("unclassified_amount", 0) or 0) for item in evidence)
-        risk_score = round(min(99, max(15, (unclassified_value / total_value) * 100))) if total_value > 0 else 0
         risk_profile = calculate_multilayer_probability(evidence, wallet_targets, chain=chain_name)
+        risk_score = risk_profile.get("risk_score")
+        trace_confidence = risk_profile.get("trace_confidence") or ("low" if partial_reasons else ("high" if max_depth_fetched >= effective_max_hops or len(fetched_wallets) > 1 else "medium"))
         graph_hash = build_graph_hash(generated_case_id, wallet_targets, evidence)
         graph_metrics = summarize_graph(G, wallet_targets)
 
@@ -311,6 +339,7 @@ def trace(req: TraceRequest, request: Request):
             "It does not identify a real person — that requires the exchange's own KYC process, which is outside this system's scope."
         )
 
+        bounded_by_hop_limit = max_depth_fetched >= effective_max_hops and not partial_reasons
         response = {
             "case_id": generated_case_id,
             "status": "partial" if partial_reasons else "complete",
@@ -324,16 +353,30 @@ def trace(req: TraceRequest, request: Request):
             "requested_currency": req.currency,
             "summary": {
                 "total_transactions": len(all_normalized),
-                "hops_traced": req.max_hops,
+                "hops_traced": max_depth_fetched,
                 "total_value": round(total_value, 3),
                 "traceable_value": round(traceable_value, 3),
                 "unclassified_value": round(unclassified_value, 3),
                 "vasp_matches": len(unique_vasp),
                 "risk_score": risk_score,
-                "fraud_probability": risk_profile.get("overall_probability", risk_score),
+                "fraud_probability": risk_score,
+                "risk_evidence_state": risk_profile.get("evidence_state", "insufficient"),
+                "risk_level": risk_profile.get("risk_level", "UNKNOWN"),
+                "trace_confidence": trace_confidence,
+                "trace_depth_reached": max_depth_fetched,
+                "max_hops": effective_max_hops,
+                "bounded_by_hop_limit": bounded_by_hop_limit,
                 "chain": chain_name,
                 "partial": bool(partial_reasons),
-                "partial_reasons": partial_reasons,
+                "trace_status": "partial" if partial_reasons else ("bounded" if bounded_by_hop_limit else "complete"),
+                "trace_complete": not partial_reasons and not bounded_by_hop_limit,
+                "partial_reason": partial_reasons[0] if partial_reasons else ("max_hop_limit_reached" if bounded_by_hop_limit else None),
+                "partial_reasons": partial_reasons if partial_reasons else (["max_hop_limit_reached"] if bounded_by_hop_limit else []),
+                "partial_reason_details": [
+                    {"code": reason, "category": "application_safety_limit" if reason in {"application_transaction_limit", "wallet_limit_reached"} else "timeout", "message": partial_reason_details.get(reason, reason)}
+                    for reason in partial_reasons
+                ],
+                "omitted_or_unavailable_transactions": None if not partial_reasons else "An exact count is unavailable because the bounded provider traversal was stopped.",
                 "limits": {
                     "max_wallets": settings.max_trace_wallets,
                     "max_transactions": settings.max_trace_transactions,
@@ -341,8 +384,12 @@ def trace(req: TraceRequest, request: Request):
                 },
             },
             "risk_profile": {
-                "overall_probability": risk_profile.get("overall_probability", risk_score),
-                "confidence": risk_profile.get("confidence", "low"),
+                "overall_probability": risk_score,
+                "risk_score": risk_score,
+                "risk_level": risk_profile.get("risk_level", "UNKNOWN"),
+                "evidence_state": risk_profile.get("evidence_state", "insufficient"),
+                "trace_confidence": trace_confidence,
+                "confidence": risk_profile.get("confidence", trace_confidence),
                 "fraudster_candidate": risk_profile.get("fraudster_candidate"),
                 "risk_factors": risk_profile.get("risk_factors", []),
                 "suspicious_path": identify_suspicious_path(evidence, wallet_targets, chain=chain_name),

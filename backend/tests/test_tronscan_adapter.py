@@ -37,12 +37,14 @@ def test_tronscan_history_normalizes_to_common_transaction(monkeypatch):
     assert seen["params"]["address"] == "TNYgZhaqeJRhdWwpqM1WxJU88L4GxW9BsV"
 
 
-def test_tronscan_excludes_non_native_and_zero_value_records(monkeypatch):
+def test_tronscan_supports_trc20_decimals_and_excludes_zero_value_records(monkeypatch):
     monkeypatch.setattr(tronscan_adapter.requests, "get", lambda *args, **kwargs: Response({"data": [
-        {"hash": "token", "contractType": 31, "ownerAddress": "TA", "toAddress": "TB", "contractData": {"amount": 1}},
+        {"hash": "token", "contractType": 31, "ownerAddress": "TA", "toAddress": "TB", "contractData": {"amount": 1500000}, "tokenInfo": {"tokenAbbr": "USDT", "tokenDecimal": 6}},
         {"hash": "zero", "contractType": 1, "ownerAddress": "TA", "toAddress": "TB", "contractData": {"amount": 0}},
     ]}))
-    assert tronscan_adapter.fetch_tron_transactions("TNYgZhaqeJRhdWwpqM1WxJU88L4GxW9BsV", api_key="test-key") == []
+    result = tronscan_adapter.fetch_tron_transactions("TNYgZhaqeJRhdWwpqM1WxJU88L4GxW9BsV", api_key="test-key")
+    assert result[0]["asset"] == "USDT"
+    assert result[0]["amount"] == 1.5
 
 
 def test_tronscan_rate_limit_keeps_retry_after_without_exposing_key(monkeypatch):

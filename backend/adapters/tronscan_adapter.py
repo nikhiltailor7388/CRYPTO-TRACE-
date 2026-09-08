@@ -40,16 +40,18 @@ def _as_timestamp(value: Any) -> str | None:
 def _normalise_transaction(transaction: Dict[str, Any]) -> Dict[str, Any] | None:
     contract = transaction.get("contractData") or transaction.get("contract_data") or {}
     contract_type = transaction.get("contractType") or transaction.get("contract_type") or contract.get("type")
-    # The existing EVM path traces native transfers only. Keep TRON equivalent
-    # until a token-transfer provider path is added deliberately.
-    if contract_type not in {None, 1, "1", "TransferContract"}:
+    native_transfer = contract_type in {None, 1, "1", "TransferContract"}
+    trc20_transfer = contract_type in {31, "31", "TriggerSmartContract", "trc20"}
+    if not native_transfer and not trc20_transfer:
         return None
     tx_hash = transaction.get("hash") or transaction.get("txID") or transaction.get("tx_hash")
     from_address = transaction.get("ownerAddress") or transaction.get("from") or contract.get("owner_address")
     to_address = transaction.get("toAddress") or transaction.get("transferToAddress") or transaction.get("to") or contract.get("to_address")
+    token = transaction.get("tokenInfo") or transaction.get("token_info") or contract.get("tokenInfo") or {}
     atomic_amount = contract.get("amount", transaction.get("amount"))
     try:
-        amount = float(atomic_amount) / 1_000_000
+        decimals = 6 if native_transfer else int(token.get("tokenDecimal", token.get("decimals", 6)))
+        amount = float(atomic_amount) / (10 ** decimals)
     except (TypeError, ValueError):
         return None
     if not tx_hash or not from_address or not to_address or amount <= 0:
@@ -59,7 +61,7 @@ def _normalise_transaction(transaction: Dict[str, Any]) -> Dict[str, Any] | None
         "tx_hash": str(tx_hash),
         "from": str(from_address),
         "to": str(to_address),
-        "asset": "TRX",
+        "asset": "TRX" if native_transfer else str(token.get("tokenAbbr") or token.get("symbol") or "TRC-20"),
         "amount": amount,
         "timestamp": _as_timestamp(transaction.get("timestamp") or transaction.get("block_timestamp")),
         "block": transaction.get("block") or transaction.get("blockNumber"),
@@ -123,19 +125,27 @@ def fetch_tron_transactions(address: str, api_key: str = None, limit: int = None
     key = api_key or getattr(settings, "tronscan_api_key", "")
     if not key:
         raise RuntimeError("TRONSCAN_CONFIGURATION: TRONSCAN_API_KEY is required for live TRON mode")
-    try:
-        response = requests.get(
-            f"{BASE_URL}/api/transaction",
-            params={"address": address, "start": 0, "limit": limit or settings.tronscan_page_size, "sort": "-timestamp"},
-            headers={"TRON-PRO-API-KEY": key}, timeout=settings.request_timeout,
-        )
-    except requests.RequestException as exc:
-        raise RuntimeError("TRONSCAN_NETWORK: request failed") from exc
-    _provider_error(response)
-    try:
-        return _parse_transaction_list(response.json())
-    except ValueError as exc:
-        raise RuntimeError("TRONSCAN_MALFORMED_RESPONSE: invalid JSON") from exc
+    requested = limit or (settings.max_trace_transactions + 1)
+    page_size = min(getattr(settings, "tronscan_page_size", 100), requested)
+    records: List[Dict[str, Any]] = []
+    for start in range(0, requested, page_size):
+        try:
+            response = requests.get(
+                f"{BASE_URL}/api/transaction",
+                params={"address": address, "start": start, "limit": min(page_size, requested - start), "sort": "-timestamp"},
+                headers={"TRON-PRO-API-KEY": key}, timeout=settings.request_timeout,
+            )
+        except requests.RequestException as exc:
+            raise RuntimeError("TRONSCAN_NETWORK: request failed") from exc
+        _provider_error(response)
+        try:
+            page_records = _parse_transaction_list(response.json())
+        except ValueError as exc:
+            raise RuntimeError("TRONSCAN_MALFORMED_RESPONSE: invalid JSON") from exc
+        records.extend(page_records)
+        if len(page_records) < page_size or len(records) >= requested:
+            break
+    return records[:requested]
 
 
 def fetch_tron_transaction_by_hash(tx_hash: str, api_key: str = None) -> List[Dict[str, Any]]:

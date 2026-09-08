@@ -2,14 +2,38 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
 from backend.services.persistence import load_case
-from backend.services.report_generator import generate_csv, generate_pdf
+from backend.services.report_generator import generate_csv, generate_pdf, generate_victim_friendly_pdf
 
 router = APIRouter()
+
+
+@router.get("/reports/{case_id}.victim.pdf")
+def get_victim_friendly_report(case_id: str):
+    """Generate a separate plain-language report from the saved case only."""
+    try:
+        # Some Starlette route orders can let the generic `.pdf` matcher pass
+        # the suffix through as part of the path parameter. The saved case ID
+        # never includes this presentation-only suffix.
+        canonical_case_id = case_id.removesuffix(".victim")
+        case = load_case(canonical_case_id)
+        if not case:
+            raise HTTPException(status_code=404, detail=f"Case {canonical_case_id} not found. Run /trace first.")
+        pdf_path = generate_victim_friendly_pdf(canonical_case_id, case)
+        return FileResponse(path=pdf_path, filename=f"victim_report_{canonical_case_id}.pdf", media_type="application/pdf")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/reports/{case_id}.pdf")
 def get_report(case_id: str):
     """Generate a PDF for a previously run case."""
+    # Compatibility guard for an already-running application whose generic
+    # route is evaluated before the newly-added victim route. Ordinary
+    # investigator report requests never enter this branch.
+    if case_id.endswith(".victim"):
+        return get_victim_friendly_report(case_id)
     try:
         case = load_case(case_id)
         if not case:
@@ -20,6 +44,14 @@ def get_report(case_id: str):
         report_summary = dict(summary)
         report_summary["chain"] = case.get("chain", report_summary.get("chain", "ETH"))
         report_summary["risk_factors"] = case.get("risk_profile", {}).get("risk_factors", [])
+        report_summary["provider"] = case.get("provider", "Unknown provider")
+        report_summary["investigation_timestamp"] = (case.get("audit_log") or [{}])[0].get("when")
+        report_summary["source_wallet"] = case.get("source_wallet") or ((case.get("wallets") or [{}])[0].get("address"))
+        report_summary["target_wallet"] = case.get("target_wallet")
+        report_summary["seed_tx"] = case.get("seed_tx")
+        report_summary["data_source"] = case.get("data_source")
+        report_summary["vasp_matches"] = case.get("vasp_matches", [])
+        report_summary["suspicious_path"] = case.get("risk_profile", {}).get("suspicious_path", [])
         pdf_path = generate_pdf(
             case_id,
             evidence,
@@ -34,7 +66,6 @@ def get_report(case_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/reports/{case_id}.csv")
 def get_report_csv(case_id: str):

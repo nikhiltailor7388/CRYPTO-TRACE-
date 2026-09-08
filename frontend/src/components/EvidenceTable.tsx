@@ -1,52 +1,30 @@
 import React from 'react'
 
-function formatAddress(addr:string) {
-  if (!addr) return '—'
-  return addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-6)}` : addr
+function formatAddress(value: string) {
+  if (!value) return '—'
+  return value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-6)}` : value
 }
 
-export default function EvidenceTable({ evidence, rows }: { evidence?: any[]; rows?: any[] }){
+export default function EvidenceTable({ evidence, rows }: { evidence?: any[]; rows?: any[] }) {
   const items = evidence || rows || []
-  if(!items || items.length===0) return <div className="empty-table">No evidence for this case yet.</div>
+  if (!items.length) return <div className="empty-table">No transaction evidence was recorded for this case.</div>
 
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>From</th>
-            <th>To</th>
-            <th>Tx hash</th>
-            <th>Amount</th>
-            <th>Asset</th>
-            <th>Timestamp</th>
-            <th>Value at tx time</th>
-            <th>VASP</th>
-            <th>Explorer</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((e:any, index:number)=> (
-            <tr key={e.tx_hash || `${e.from}-${e.to}-${index}`}>
-              <td>{formatAddress(e.from)}</td>
-              <td>{formatAddress(e.to)}</td>
-              <td>{e.explorer_url ? <a href={e.explorer_url} target="_blank" rel="noreferrer">{(e.tx_hash||'').slice(0, 12)}</a> : (e.tx_hash || 'unknown').slice(0, 12)}</td>
-              <td>{Number(e.amount || 0).toFixed(3)}</td>
-              <td>{e.asset || 'ETH'}</td>
-              <td>{e.timestamp || 'unknown'}</td>
-              <td>{e.historical_value_usd || 'historical price unavailable'}</td>
-              <td>
-                <span className={`tag ${e.vasp && e.vasp !== 'UNKNOWN' ? 'vasp' : 'neutral'}`}>
-                  {e.vasp || 'UNKNOWN'}
-                </span>
-              </td>
-              <td>
-                {e.explorer_url ? <a href={e.explorer_url} target="_blank" rel="noreferrer">Open ↗</a> : 'Unavailable'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
+  return <div className="table-wrap">
+    <table>
+      <thead><tr><th>From</th><th>To</th><th>Transaction</th><th>Amount</th><th>Asset</th><th>Timestamp</th><th>Value at tx time</th><th>VASP / entity</th><th>Explorer</th></tr></thead>
+      <tbody>
+        {items.map((item: any, index: number) => <tr key={item.tx_hash || `${item.from}-${item.to}-${index}`}>
+          <td className="wallet-cell"><code title={item.from || ''}>{formatAddress(item.from)}</code></td>
+          <td className="wallet-cell"><code title={item.to || ''}>{formatAddress(item.to)}</code></td>
+          <td className="tx-cell">{item.explorer_url ? <a href={item.explorer_url} target="_blank" rel="noreferrer" title={item.tx_hash || ''}><code>{formatAddress(item.tx_hash || 'unknown')}</code></a> : <code title={item.tx_hash || ''}>{formatAddress(item.tx_hash || 'unknown')}</code>}</td>
+          <td className="amount-cell">{Number(item.amount || 0).toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+          <td><span className="asset-tag">{item.asset || 'ETH'}</span></td>
+          <td className="timestamp-cell">{item.timestamp || 'unknown'}</td>
+          <td>{item.historical_value_usd || 'Historical price unavailable'}</td>
+          <td><span className={`tag ${item.vasp && item.vasp !== 'UNKNOWN' ? 'vasp' : 'neutral'}`}>{item.vasp || 'UNKNOWN'}</span></td>
+          <td>{item.explorer_url ? <a href={item.explorer_url} target="_blank" rel="noreferrer">View ↗</a> : 'Unavailable'}</td>
+        </tr>)}
+      </tbody>
+    </table>
+  </div>
 }

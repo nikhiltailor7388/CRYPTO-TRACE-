@@ -39,7 +39,7 @@ def fetch_transactions_from_cache(address: str = None, chain: str = "ETH", tx_ha
     ]
 
 
-def fetch_transactions_etherscan(address: str, api_key: str, chainid: int = 1, tx_hash: str = None) -> List[Dict[str, Any]]:
+def fetch_transactions_etherscan(address: str, api_key: str, chainid: int = 1, tx_hash: str = None, asset: str = None) -> List[Dict[str, Any]]:
     """Fetch transactions using the Etherscan V2 endpoint and a retry-aware wrapper."""
     try:
         if tx_hash:
@@ -57,6 +57,7 @@ def fetch_transactions_etherscan(address: str, api_key: str, chainid: int = 1, t
                 address,
                 chainid=chainid,
                 api_key=api_key or settings.etherscan_api_key,
+                asset=asset,
                 max_attempts=settings.max_retries,
                 backoff_seconds=settings.backoff_seconds,
             )
@@ -69,7 +70,7 @@ def fetch_transactions_etherscan(address: str, api_key: str, chainid: int = 1, t
         raise
 
 
-def fetch_transactions(address: str, use_cache: bool = True, api_key: str = None, chain: str = "ETH", tx_hash: str = None) -> List[Dict[str, Any]]:
+def fetch_transactions(address: str, use_cache: bool = True, api_key: str = None, chain: str = "ETH", tx_hash: str = None, asset: str = None) -> List[Dict[str, Any]]:
     """Public function to fetch transactions for an address.
 
     In live investigation mode the system must not silently fall back to demo cache data. If the live lookup fails or the
@@ -92,7 +93,9 @@ def fetch_transactions(address: str, use_cache: bool = True, api_key: str = None
             if tx_hash else fetch_tron_transactions(
                 address,
                 api_key=tronscan_key,
-                limit=min(settings.tronscan_page_size, settings.max_trace_transactions),
+                # Request one additional record so the traversal can report a
+                # real application cap rather than guessing from an exact hit.
+                limit=settings.max_trace_transactions + 1,
             )
         )
 
@@ -104,6 +107,7 @@ def fetch_transactions(address: str, use_cache: bool = True, api_key: str = None
         api_key or settings.etherscan_api_key,
         chainid=chain_id,
         tx_hash=tx_hash,
+        asset=asset,
     )
     if not results:
         return []

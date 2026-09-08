@@ -73,6 +73,63 @@ def test_multi_hop_trace_fetches_downstream_wallet_history(monkeypatch):
     assert {edge["hop"] for edge in response["graph"]["edges"]} == {1, 2}
 
 
+def test_trace_caps_at_three_hops_even_when_request_exceeds_three(monkeypatch):
+    from types import SimpleNamespace
+    from backend.api import trace_impl
+
+    wallet_a = "0x1111111111111111111111111111111111111111"
+    wallet_b = "0x2222222222222222222222222222222222222222"
+    wallet_c = "0x3333333333333333333333333333333333333333"
+    wallet_d = "0x4444444444444444444444444444444444444444"
+    histories = {
+        wallet_a: [{"tx_hash": "t1", "from": wallet_a, "to": wallet_b, "amount": 2.0, "timestamp": "2024-01-01T00:00:00Z"}],
+        wallet_b: [{"tx_hash": "t2", "from": wallet_b, "to": wallet_c, "amount": 1.0, "timestamp": "2024-01-01T00:05:00Z"}],
+        wallet_c: [{"tx_hash": "t3", "from": wallet_c, "to": wallet_d, "amount": 0.5, "timestamp": "2024-01-01T00:10:00Z"}],
+    }
+    monkeypatch.setenv("USE_ETHERSCAN", "true")
+    monkeypatch.setenv("DEMO_MODE", "false")
+    monkeypatch.setattr(trace_impl, "settings", SimpleNamespace(
+        use_etherscan=True, demo_mode=False, etherscan_api_key="test", max_trace_wallets=10,
+        max_trace_transactions=100, trace_timeout_seconds=60, max_historical_price_lookups=0,
+    ))
+    monkeypatch.setattr(trace_impl, "fetch_transactions", lambda address, **kwargs: histories.get(address, []))
+    monkeypatch.setattr("backend.services.persistence.save_case", lambda *args, **kwargs: None)
+
+    response = trace_impl.trace(trace_impl.TraceRequest(case_id="THREE-HOPS", wallets=[wallet_a], max_hops=3), SimpleNamespace(headers={}))
+    assert response["summary"]["max_hops"] == 3
+    assert response["summary"]["hops_traced"] <= 3
+    assert {item["tx_hash"] for item in response["evidence"]} == {"t1", "t2", "t3"}
+    assert all(edge["hop"] <= 3 for edge in response["graph"]["edges"])
+
+
+def test_trace_avoids_revisiting_duplicate_wallets_and_cycles(monkeypatch):
+    from types import SimpleNamespace
+    from backend.api import trace_impl
+
+    wallet_a = "0x1111111111111111111111111111111111111111"
+    wallet_b = "0x2222222222222222222222222222222222222222"
+    histories = {
+        wallet_a: [
+            {"tx_hash": "t1", "from": wallet_a, "to": wallet_b, "amount": 1.0, "timestamp": "2024-01-01T00:00:00Z"},
+            {"tx_hash": "t2", "from": wallet_a, "to": wallet_b, "amount": 1.0, "timestamp": "2024-01-01T00:01:00Z"},
+        ],
+        wallet_b: [{"tx_hash": "t3", "from": wallet_b, "to": wallet_a, "amount": 0.5, "timestamp": "2024-01-01T00:02:00Z"}],
+    }
+    monkeypatch.setenv("USE_ETHERSCAN", "true")
+    monkeypatch.setenv("DEMO_MODE", "false")
+    monkeypatch.setattr(trace_impl, "settings", SimpleNamespace(
+        use_etherscan=True, demo_mode=False, etherscan_api_key="test", max_trace_wallets=10,
+        max_trace_transactions=100, trace_timeout_seconds=60, max_historical_price_lookups=0,
+    ))
+    monkeypatch.setattr(trace_impl, "fetch_transactions", lambda address, **kwargs: histories.get(address, []))
+    monkeypatch.setattr("backend.services.persistence.save_case", lambda *args, **kwargs: None)
+
+    response = trace_impl.trace(trace_impl.TraceRequest(case_id="NO-CYCLE", wallets=[wallet_a], max_hops=3), SimpleNamespace(headers={}))
+    tx_hashes = [item["tx_hash"] for item in response["evidence"]]
+    assert len(tx_hashes) == len(set(tx_hashes))
+    assert len(response["graph"]["nodes"]) <= 3
+
+
 def test_parallel_transactions_are_not_dropped_from_graph():
     from backend.services.graph_utils import bfs_subgraph_from_graph, build_graph_from_txs
 
