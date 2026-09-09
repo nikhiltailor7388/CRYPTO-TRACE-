@@ -1,9 +1,8 @@
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-from backend.services.auth import hash_password
 
 DB_PATH = Path(__file__).resolve().parents[1] / "data" / "cryptotrace.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -34,12 +33,19 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             case_id TEXT UNIQUE NOT NULL,
             user_id INTEGER,
+            is_public INTEGER NOT NULL DEFAULT 0,
             payload TEXT NOT NULL,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(cases)").fetchall()}
+    if "is_public" not in columns:
+        conn.execute("ALTER TABLE cases ADD COLUMN is_public INTEGER NOT NULL DEFAULT 0")
+    public_demo_case_id = os.getenv("PUBLIC_DEMO_CASE_ID", "CASE-DEMO-REAL").strip()
+    if public_demo_case_id:
+        conn.execute("UPDATE cases SET is_public = 1 WHERE case_id = ?", (public_demo_case_id,))
     conn.commit()
     conn.close()
 
@@ -74,20 +80,21 @@ def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     return dict(row) if row else None
 
 
-def save_case(case_id: str, payload: Dict[str, Any], user_id: Optional[int] = None) -> str:
+def save_case(case_id: str, payload: Dict[str, Any], user_id: Optional[int] = None, is_public: bool = False) -> str:
     init_db()
     conn = get_connection()
     payload_json = json.dumps(payload, ensure_ascii=False, default=str)
     conn.execute(
         """
-        INSERT INTO cases (case_id, user_id, payload, updated_at)
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO cases (case_id, user_id, is_public, payload, updated_at)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(case_id) DO UPDATE SET
             user_id = excluded.user_id,
+            is_public = excluded.is_public,
             payload = excluded.payload,
             updated_at = CURRENT_TIMESTAMP
         """,
-        (case_id, user_id, payload_json),
+        (case_id, user_id, int(is_public), payload_json),
     )
     conn.commit()
     conn.close()
@@ -102,6 +109,14 @@ def load_case(case_id: str) -> Optional[Dict[str, Any]]:
     if not row:
         return None
     return json.loads(row["payload"])
+
+
+def get_case_metadata(case_id: str) -> Optional[Dict[str, Any]]:
+    init_db()
+    conn = get_connection()
+    row = conn.execute("SELECT case_id, user_id, is_public, created_at, updated_at FROM cases WHERE case_id = ?", (case_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 
 def list_cases(user_id: Optional[int] = None) -> List[str]:
@@ -120,28 +135,13 @@ def list_case_metadata(user_id: Optional[int] = None) -> List[Dict[str, Any]]:
     conn = get_connection()
     if user_id is not None:
         rows = conn.execute(
-            "SELECT case_id, user_id, created_at, updated_at FROM cases WHERE user_id = ? ORDER BY updated_at DESC",
+            "SELECT case_id, user_id, is_public, created_at, updated_at FROM cases WHERE user_id = ? ORDER BY updated_at DESC",
             (user_id,),
         ).fetchall()
     else:
-        rows = conn.execute("SELECT case_id, user_id, created_at, updated_at FROM cases ORDER BY updated_at DESC").fetchall()
+        rows = conn.execute("SELECT case_id, user_id, is_public, created_at, updated_at FROM cases ORDER BY updated_at DESC").fetchall()
     conn.close()
     return [dict(row) for row in rows]
-
-
-def ensure_demo_user(email: str = "demo@cryptotrace.test", password: str = "Password123!", full_name: str = "Demo Analyst") -> Dict[str, Any]:
-    init_db()
-    existing = get_user_by_email(email)
-    if existing:
-        return existing
-
-    user = create_user(email, hash_password(password), full_name)
-    return user if user else {"email": email, "full_name": full_name}
-
-
-def ensure_seed_users() -> None:
-    ensure_demo_user()
-    ensure_demo_user("nikhiltailor7388@gmail.com", "Password123!", "Nikhil Tailor")
 
 
 def count_users() -> int:

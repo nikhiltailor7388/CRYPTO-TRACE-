@@ -1,6 +1,13 @@
 from backend.graph.trace_engine import bounded_trace, build_transaction_graph
 
 
+def test_tron_address_validation_rejects_bad_checksum():
+    from backend.services.address_validator import is_valid_address
+
+    assert not is_valid_address("TNYgZhaqeJRhdWwpqM1WxJU88L4GxW9BsV", "TRON")
+    assert is_valid_address("T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb", "TRON")
+
+
 def test_bounded_trace_stops_at_max_hops():
     txs = [
         {"from": "0xaaa", "to": "0xbbb", "amount": 5.0, "tx_hash": "t1"},

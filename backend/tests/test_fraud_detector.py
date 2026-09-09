@@ -1,4 +1,4 @@
-from backend.services.fraud_detector import apply_canonical_risk, build_graph_hash, calculate_multilayer_probability
+from backend.services.fraud_detector import apply_canonical_risk, build_graph_hash, calculate_multilayer_probability, identify_suspicious_path
 
 
 def test_multilayer_probability_in_expected_range():
@@ -18,6 +18,24 @@ def test_graph_hash_is_stable_for_same_case():
     first = build_graph_hash("CASE-001", ["0xvictim"], [{"from": "0xvictim", "to": "0xaaa111", "amount": 10.0, "tx_hash": "t1"}])
     second = build_graph_hash("CASE-001", ["0xvictim"], [{"from": "0xvictim", "to": "0xaaa111", "amount": 10.0, "tx_hash": "t1"}])
     assert first == second
+
+
+def test_suspicious_path_is_a_connected_downstream_source_path():
+    evidence = [
+        {"from": "0xsource", "to": "0xhop1", "amount": 1},
+        {"from": "0xhop1", "to": "0xhop2", "amount": 1},
+        {"from": "0xhop2", "to": "0xlead", "amount": 1, "risk_classification": "high_risk"},
+        {"from": "0xunrelated", "to": "0xelsewhere", "amount": 1, "risk_classification": "high_risk"},
+    ]
+    assert identify_suspicious_path(evidence, ["0xsource"]) == ["0xsource", "0xhop1", "0xhop2", "0xlead"]
+
+
+def test_suspicious_path_does_not_fabricate_a_direct_or_unrelated_lead():
+    evidence = [
+        {"from": "0xsource", "to": "0xhop1", "amount": 1},
+        {"from": "0xunrelated", "to": "0xrisky", "amount": 1, "risk_classification": "high_risk"},
+    ]
+    assert identify_suspicious_path(evidence, ["0xsource"]) == []
 
 
 def test_risk_score_is_evidence_based_not_a_default_fifty():

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.services.auth import decode_token, get_bearer_token
+from backend.services.case_access import require_case_access
 from backend.services.sqlite_store import get_user_by_id, list_case_metadata
 from backend.services.persistence import load_case
 
@@ -26,14 +27,15 @@ def current_user_or_none(token: Optional[HTTPAuthorizationCredentials] = Depends
 
 @router.get("/cases")
 def list_cases(user: Optional[Dict[str, Any]] = Depends(current_user_or_none)):
-    rows = list_case_metadata(user["id"] if user else None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication is required to list private cases")
+    rows = list_case_metadata(user["id"])
     result: List[Dict[str, Any]] = []
     for row in rows:
         case_id = row["case_id"]
         payload = load_case(case_id) or {}
         result.append({
             "case_id": case_id,
-            "user_id": row.get("user_id"),
             "created_at": row.get("created_at"),
             "updated_at": row.get("updated_at"),
             "summary": payload.get("summary", {}),
@@ -44,9 +46,9 @@ def list_cases(user: Optional[Dict[str, Any]] = Depends(current_user_or_none)):
 
 @router.get("/cases/{case_id}")
 def get_case(case_id: str, user: Optional[Dict[str, Any]] = Depends(current_user_or_none)):
+    require_case_access(case_id, user)
     payload = load_case(case_id)
     if not payload:
         raise HTTPException(status_code=404, detail="Case not found")
-    if user and payload.get("user_id") and payload.get("user_id") != user["id"]:
-        raise HTTPException(status_code=403, detail="Unauthorized")
+    payload.pop("user_id", None)
     return payload

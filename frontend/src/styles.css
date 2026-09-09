@@ -626,6 +626,37 @@ body {
 .graph-layout aside { overflow-wrap: anywhere; }
 .graph-shell { height: min(480px, 62vw); min-height: 320px; background: radial-gradient(circle at 50% 50%, rgba(14, 116, 144, 0.09), transparent 58%), rgba(2, 12, 27, 0.6); }
 .graph-panel aside.panel { background: rgba(2, 12, 27, 0.58); border-radius: 12px; box-shadow: none; }
+.graph-context { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.graph-canvas-wrap { min-width: 0; }
+.graph-toolbar { display: flex; justify-content: flex-end; gap: 6px; margin: 0 0 8px; }
+.graph-toolbar button, .graph-notice button { border: 1px solid rgba(56, 189, 248, .3); border-radius: 7px; background: rgba(14, 116, 144, .13); color: var(--cyan); cursor: pointer; font: inherit; font-size: .76rem; font-weight: 700; padding: 6px 9px; }
+.graph-notice { margin: 0 0 12px; padding: 10px 12px; border: 1px solid rgba(56, 189, 248, .22); border-radius: 10px; color: var(--muted); font-size: .82rem; line-height: 1.45; }
+.graph-notice button { margin-left: 8px; }
+.adaptive-graph { display: block; width: 100%; height: auto; min-height: 280px; max-height: 680px; touch-action: none; cursor: grab; }
+.adaptive-graph:active { cursor: grabbing; }
+.hop-label { fill: #94a3b8; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-anchor: middle; }
+.relationship { cursor: pointer; }
+.relationship-line { fill: none; stroke: #5eead4; opacity: .82; transition: opacity .15s ease, stroke-width .15s ease; }
+.relationship:hover .relationship-line, .relationship-line.selected { stroke: #f8fafc; opacity: 1; }
+.relationship-label { fill: #dbeafe; font-size: 10px; font-weight: 700; text-anchor: middle; paint-order: stroke; stroke: #06111f; stroke-width: 3px; stroke-linejoin: round; }
+.wallet-node { stroke: #f8fafc; stroke-width: 2px; }
+.selected-node .wallet-node { stroke: #fef08a; stroke-width: 4px; filter: drop-shadow(0 0 6px rgba(254, 240, 138, .8)); }
+.wallet-address { fill: #f8fafc; font-size: 9px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+.wallet-meta { fill: #cbd5e1; font-size: 9px; text-anchor: middle; pointer-events: none; }
+.cluster-boundary { fill: rgba(139, 92, 246, .05); stroke: #a78bfa; stroke-width: 1.5px; stroke-dasharray: 5 4; }
+.cluster-label { fill: #c4b5fd; font-size: 10px; font-weight: 700; }
+.graph-detail { padding: 16px; min-height: 220px; overflow-wrap: anywhere; }
+.graph-detail h3 { margin: 5px 0 15px; font-size: 1rem; letter-spacing: -.02em; }
+.graph-detail dl { display: grid; gap: 10px; margin: 0 0 14px; }
+.graph-detail dl > div { display: grid; gap: 3px; }
+.graph-detail dt { color: var(--muted); font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.graph-detail dd { margin: 0; color: var(--text); font-size: .86rem; }
+.graph-detail code { font-size: .72rem; }
+.transaction-list { display: grid; max-height: 250px; margin-top: 8px; overflow: auto; border-top: 1px solid var(--line); }
+.transaction-list > div { display: flex; justify-content: space-between; gap: 8px; padding: 8px 2px; border-bottom: 1px solid rgba(148, 163, 184, .1); font-size: .76rem; }
+.transaction-list span { color: var(--muted); white-space: nowrap; }
+.graph-minimal .adaptive-graph { max-width: 520px; margin: 0 auto; min-height: 280px; }
+.graph-high .adaptive-graph, .graph-advanced .adaptive-graph { min-height: 390px; }
 .graph-node { cursor: pointer; }
 .graph-node-details { padding: 16px; min-height: 240px; }
 .graph-node-details h3 { margin: 3px 0 0; text-transform: capitalize; }
@@ -677,4 +708,5 @@ td { white-space: nowrap; }
   .info-panel, .risk-panel, .graph-panel, .evidence-panel { padding: 16px; }
   .graph-shell { min-height: 280px; }
   .flow-summary, .vasp-panel { padding: 16px; }
+  .adaptive-graph { min-height: 250px; }
 }

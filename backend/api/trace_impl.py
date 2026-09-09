@@ -421,7 +421,12 @@ def trace(req: TraceRequest, request: Request):
 
         from backend.services.persistence import save_case
         try:
-            save_case(generated_case_id, response, user_id=user_id)
+            save_case(
+                generated_case_id,
+                response,
+                user_id=user_id,
+                is_public=generated_case_id == getattr(settings, "public_demo_case_id", ""),
+            )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Trace completed but case persistence failed: {exc}")
         return response

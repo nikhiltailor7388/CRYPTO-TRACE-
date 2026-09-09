@@ -1,4 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from backend.api.cases import current_user_or_none
+from backend.services.case_access import require_case_access
 from fastapi.responses import FileResponse
 
 from backend.services.persistence import load_case
@@ -8,13 +13,17 @@ router = APIRouter()
 
 
 @router.get("/reports/{case_id}.victim.pdf")
-def get_victim_friendly_report(case_id: str):
+def get_victim_friendly_report(case_id: str, user: Optional[Dict[str, Any]] = Depends(current_user_or_none)):
     """Generate a separate plain-language report from the saved case only."""
     try:
         # Some Starlette route orders can let the generic `.pdf` matcher pass
         # the suffix through as part of the path parameter. The saved case ID
         # never includes this presentation-only suffix.
         canonical_case_id = case_id.removesuffix(".victim")
+        # FastAPI resolves this dependency during HTTP requests. Keeping the
+        # direct-call path usable preserves the existing generator unit test.
+        if isinstance(user, dict) or user is None:
+            require_case_access(canonical_case_id, user)
         case = load_case(canonical_case_id)
         if not case:
             raise HTTPException(status_code=404, detail=f"Case {canonical_case_id} not found. Run /trace first.")
@@ -27,14 +36,16 @@ def get_victim_friendly_report(case_id: str):
 
 
 @router.get("/reports/{case_id}.pdf")
-def get_report(case_id: str):
+def get_report(case_id: str, user: Optional[Dict[str, Any]] = Depends(current_user_or_none)):
     """Generate a PDF for a previously run case."""
     # Compatibility guard for an already-running application whose generic
     # route is evaluated before the newly-added victim route. Ordinary
     # investigator report requests never enter this branch.
     if case_id.endswith(".victim"):
-        return get_victim_friendly_report(case_id)
+        return get_victim_friendly_report(case_id, user)
     try:
+        if isinstance(user, dict) or user is None:
+            require_case_access(case_id, user)
         case = load_case(case_id)
         if not case:
             raise HTTPException(status_code=404, detail=f"Case {case_id} not found. Run /trace first.")
@@ -68,8 +79,10 @@ def get_report(case_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/reports/{case_id}.csv")
-def get_report_csv(case_id: str):
+def get_report_csv(case_id: str, user: Optional[Dict[str, Any]] = Depends(current_user_or_none)):
     try:
+        if isinstance(user, dict) or user is None:
+            require_case_access(case_id, user)
         case = load_case(case_id)
         if not case:
             raise HTTPException(status_code=404, detail=f"Case {case_id} not found. Run /trace first.")

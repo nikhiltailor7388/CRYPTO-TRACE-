@@ -1,4 +1,5 @@
 import React, {useRef, useState} from 'react'
+import { apiUrl, authHeaders } from '../api'
 
 export default function CaseForm({onResult, onStart, onComplete, authToken}:{onResult:(result:any)=>void, onStart?:()=>void, onComplete?:(result:any)=>void, authToken?:string}){
   const [sourceWallet, setSourceWallet] = useState('')
@@ -45,11 +46,11 @@ export default function CaseForm({onResult, onStart, onComplete, authToken}:{onR
         max_hops: maxHops,
       }
 
-      const res = await fetch('/trace', {
+      const res = await fetch(apiUrl('/trace'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(authToken ? { Authorization: 'Bearer ' + authToken } : {}),
+          ...authHeaders(authToken),
         },
         body: JSON.stringify(payload),
         signal: controller.signal,

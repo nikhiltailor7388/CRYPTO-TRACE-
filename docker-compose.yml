@@ -3,7 +3,8 @@ version: "3.9"
 services:
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     env_file:
       - ./backend/.env
     ports:

@@ -6,10 +6,10 @@ from backend.services.sqlite_store import save_case as sqlite_save_case
 from backend.services.fraud_detector import apply_canonical_risk
 
 
-def save_case(case_id: str, payload: Any, user_id: Optional[int] = None) -> str:
+def save_case(case_id: str, payload: Any, user_id: Optional[int] = None, is_public: bool = False) -> str:
     if isinstance(payload, dict):
         apply_canonical_risk(payload)
-    sqlite_save_case(case_id, payload, user_id=user_id)
+    sqlite_save_case(case_id, payload, user_id=user_id, is_public=is_public)
     return case_id
 
 

@@ -2,8 +2,46 @@ import React, {useEffect, useMemo, useState} from 'react'
 import CaseForm from './components/CaseForm'
 import GraphView from './components/GraphView'
 import EvidenceTable from './components/EvidenceTable'
+import { apiUrl, authHeaders } from './api'
 
 const STORAGE_KEY = 'cryptotrace-auth'
+
+function graphAddress(value: unknown, chain: string) {
+  const address = String(value || '').trim()
+  return chain === 'TRON' ? address : address.toLowerCase()
+}
+
+function getRelevantSuspiciousPaths(data: any, rawPaths: unknown): string[][] {
+  const paths = Array.isArray(rawPaths) && Array.isArray(rawPaths[0]) ? rawPaths : Array.isArray(rawPaths) && rawPaths.length ? [rawPaths] : []
+  const chain = String(data?.chain || 'ETH').toUpperCase()
+  const source = graphAddress(data?.source_wallet || data?.wallets?.[0]?.address, chain)
+  const candidate = graphAddress(data?.risk_profile?.fraudster_candidate, chain)
+  const evidence = Array.isArray(data?.evidence) ? data.evidence : []
+  const edges = new Set(evidence.map((item: any) => `${graphAddress(item.from, item.source_chain || item.chain || chain)}|${graphAddress(item.to, item.destination_chain || item.chain || chain)}`))
+  const vaspEndpoints = new Set(evidence.filter((item: any) => String(item.vasp || 'UNKNOWN').toUpperCase() !== 'UNKNOWN').map((item: any) => graphAddress(item.to, item.destination_chain || item.chain || chain)))
+  const riskyEndpoints = new Set(evidence.filter((item: any) => ['sanctioned', 'high_risk', 'illicit'].includes(String(item.risk_classification || '').toLowerCase()) || String(item.entity_type || '').toLowerCase() === 'mixer').map((item: any) => graphAddress(item.to, item.destination_chain || item.chain || chain)))
+  const observedRisk = (data?.risk_profile?.risk_factors || []).some((factor: any) => factor?.observed !== false && Number(factor?.score || 0) > 0)
+  const unique = new Map<string, string[]>()
+
+  paths.forEach((rawPath: any) => {
+    if (!Array.isArray(rawPath) || rawPath.length < 2) return
+    const normalized = rawPath.map((address) => graphAddress(address, chain))
+    if (!source || normalized[0] !== source || new Set(normalized).size !== normalized.length) return
+    if (!normalized.slice(1).every((address, index) => edges.has(`${normalized[index]}|${address}`))) return
+    const endpoint = normalized[normalized.length - 1]
+    const hasEndpointLead = endpoint === candidate || vaspEndpoints.has(endpoint) || riskyEndpoints.has(endpoint)
+    if (!hasEndpointLead && !(observedRisk && normalized.length >= 3)) return
+    unique.set(normalized.join('|'), rawPath.map(String))
+  })
+
+  return [...unique.values()].sort((left, right) => {
+    const score = (path: string[]) => {
+      const endpoint = graphAddress(path[path.length - 1], chain)
+      return (riskyEndpoints.has(endpoint) ? 100 : 0) + (endpoint === candidate ? 60 : 0) + (vaspEndpoints.has(endpoint) ? 20 : 0) + Math.max(0, 10 - path.length)
+    }
+    return score(right) - score(left) || left.length - right.length || left.join('|').localeCompare(right.join('|'))
+  })
+}
 
 async function readJsonResponse(res: Response) {
   const text = await res.text()
@@ -23,6 +61,7 @@ type AuthState = {
 
 export default function App(){
   const [data, setData] = useState<any>(null)
+  const [showAllSuspiciousPaths, setShowAllSuspiciousPaths] = useState(false)
   const [auth, setAuth] = useState<AuthState | null>(() => {
     const raw = localStorage.getItem(STORAGE_KEY)
     return raw ? JSON.parse(raw) : null
@@ -49,8 +88,12 @@ export default function App(){
     setCasesLoading(true)
     setCaseError('')
     try {
-      const res = await fetch('/cases', { headers: { Authorization: 'Bearer ' + token } })
+      const res = await fetch(apiUrl('/cases'), { headers: authHeaders(token) })
       const payload = await readJsonResponse(res)
+      if (res.status === 401) {
+        setAuth(null)
+        throw new Error('Your session has expired. Please log in again.')
+      }
       if (!res.ok) throw new Error(payload?.detail || 'Failed to load cases')
       setCaseList(payload.cases || [])
     } catch (err: any) {
@@ -64,7 +107,7 @@ export default function App(){
     setAuthLoading(true)
     setAuthError('')
     try {
-      const res = await fetch(`/auth/${authMode}`, {
+      const res = await fetch(apiUrl(`/auth/${authMode}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -88,8 +131,12 @@ export default function App(){
   const handleLoadCase = async (caseId: string) => {
     if (!auth?.token) return
     try {
-      const res = await fetch(`/cases/${caseId}`, { headers: { Authorization: 'Bearer ' + auth.token } })
+      const res = await fetch(apiUrl(`/cases/${caseId}`), { headers: authHeaders(auth.token) })
       const payload = await readJsonResponse(res)
+      if (res.status === 401) {
+        setAuth(null)
+        throw new Error('Your session has expired. Please log in again.')
+      }
       if (!res.ok) throw new Error(payload?.detail || 'Failed to load case')
       setData(payload)
     } catch (err: any) {
@@ -99,6 +146,7 @@ export default function App(){
 
   const handleTraceComplete = (result: any) => {
     if (auth?.token) loadCases(auth.token)
+    setShowAllSuspiciousPaths(false)
     setData(result)
   }
 
@@ -107,6 +155,8 @@ export default function App(){
     const totalValue = Number(data?.summary?.total_value ?? evidence.reduce((sum:any, row:any) => sum + Number(row.amount || 0), 0))
     const traceable = Number(data?.summary?.traceable_value ?? evidence.reduce((sum:any, row:any) => sum + Number(row.traceable_amount || 0), 0))
     const unclassified = Number(data?.summary?.unclassified_value ?? evidence.reduce((sum:any, row:any) => sum + Number(row.unclassified_amount || 0), 0))
+    const rawPaths = data?.risk_profile?.suspicious_paths ?? data?.risk_profile?.suspicious_path ?? []
+    const suspiciousPaths = getRelevantSuspiciousPaths(data, rawPaths)
     return {
       totalValue,
       traceable,
@@ -123,7 +173,7 @@ export default function App(){
       dataSource: data?.data_source || 'no trace yet',
       graphHash: data?.graph_hash || 'N/A',
       fraudster: data?.risk_profile?.fraudster_candidate || 'Not identified',
-      suspiciousPath: data?.risk_profile?.suspicious_path || [],
+      suspiciousPaths,
       riskFactors: data?.risk_profile?.risk_factors || [],
       graphMetrics: data?.graph_metrics || {node_count: 0, edge_count: 0, max_degree: 0},
       destinations: Array.isArray(data?.destination_wallets) ? data.destination_wallets : [],
@@ -167,6 +217,25 @@ export default function App(){
     a.download = `evidence-${data.case_id || 'case'}.csv`
     a.click()
     URL.revokeObjectURL(url)
+  }
+
+  const openReport = async (path: string, filename: string) => {
+    try {
+      const res = await fetch(apiUrl(path), { headers: authHeaders(auth?.token) })
+      if (!res.ok) {
+        const payload = await readJsonResponse(res)
+        throw new Error(payload?.detail || 'Unable to retrieve report')
+      }
+      const blobUrl = URL.createObjectURL(await res.blob())
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.target = '_blank'
+      link.download = filename
+      link.click()
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000)
+    } catch (err: any) {
+      setCaseError(err.message || 'Unable to retrieve report')
+    }
   }
 
   return (
@@ -328,15 +397,9 @@ export default function App(){
                   <span className="label">Graph metrics</span>
                   <strong>{summary.graphMetrics.node_count} nodes / {summary.graphMetrics.edge_count} edges</strong>
                 </div>
-                <a className="download-link" href={data.report_url || `/reports/${data.case_id}.pdf`} target="_blank" rel="noreferrer">
-                  Investigator PDF
-                </a>
-                <a className="download-link" href={`/reports/${data.case_id}.victim.pdf`} target="_blank" rel="noreferrer">
-                  Victim-friendly report
-                </a>
-               <a className="download-link" href={data.csv_report_url || `/reports/${data.case_id}.csv`} target="_blank" rel="noreferrer">
-                  CSV report
-                </a>
+                <button className="download-link" type="button" onClick={() => openReport(data.report_url || `/reports/${data.case_id}.pdf`, `report_${data.case_id}.pdf`)}>Investigator PDF</button>
+                <button className="download-link" type="button" onClick={() => openReport(`/reports/${data.case_id}.victim.pdf`, `victim_report_${data.case_id}.pdf`)}>Victim-friendly report</button>
+                <button className="download-link" type="button" onClick={() => openReport(data.csv_report_url || `/reports/${data.case_id}.csv`, `report_${data.case_id}.csv`)}>CSV report</button>
                <button className="download-link" type="button" onClick={downloadEvidenceJson}>Evidence JSON</button>
                <button className="download-link" type="button" onClick={downloadEvidenceCsv}>Evidence CSV</button>
               </div>
@@ -386,7 +449,14 @@ export default function App(){
                 </div>
                 <div className="suspicious-path-box">
                   <span className="label">Suspicious path</span>
-                  <strong>{summary.suspiciousPath.length ? summary.suspiciousPath.join(' → ') : 'No definitive path found'}</strong>
+                  {summary.suspiciousPaths.length ? summary.suspiciousPaths.slice(0, showAllSuspiciousPaths ? summary.suspiciousPaths.length : 3).map((path: string[], index: number) => (
+                    <strong key={`${index}-${path.join('-')}`}>{summary.suspiciousPaths.length > 1 ? `Path ${index + 1}: ` : ''}{path.join(' → ')}</strong>
+                  )) : <strong>No definitive path found</strong>}
+                  {summary.suspiciousPaths.length > 3 ? (
+                    <button className="download-link" type="button" onClick={() => setShowAllSuspiciousPaths((visible) => !visible)}>
+                      {showAllSuspiciousPaths ? 'Show fewer paths' : `View all ${summary.suspiciousPaths.length} paths`}
+                    </button>
+                  ) : null}
                 </div>
               </div>
 

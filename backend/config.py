@@ -25,10 +25,17 @@ class Settings:
     max_historical_price_lookups: int = int(os.getenv("MAX_HISTORICAL_PRICE_LOOKUPS", "10"))
     tronscan_page_size: int = int(os.getenv("TRONSCAN_PAGE_SIZE", "100"))
     cors_origins: tuple[str, ...] = tuple(
-        origin.strip() for origin in os.getenv(
-            "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-        ).split(",") if origin.strip()
+        dict.fromkeys(
+            origin.strip()
+            for origin in (
+                "http://localhost:5173,http://127.0.0.1:5173,"
+                + os.getenv("FRONTEND_URL", "") + ","
+                + os.getenv("CORS_ORIGINS", "")
+            ).split(",")
+            if origin.strip()
+        )
     )
+    public_demo_case_id: str = os.getenv("PUBLIC_DEMO_CASE_ID", "CASE-DEMO-REAL").strip()
 
 
 settings = Settings()

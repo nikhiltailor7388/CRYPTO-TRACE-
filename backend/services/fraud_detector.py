@@ -270,23 +270,54 @@ def apply_canonical_risk(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def identify_suspicious_path(evidence: List[Dict[str, Any]], wallets: List[str], chain: str = "ETH") -> List[str]:
-    wallet_set = {_address(w, chain) for w in wallets if w}
-    current = None
-    path = []
+    """Return one source-connected investigative path, never an appended list of unrelated edges.
+
+    This is a display lead only; it does not alter the saved evidence or risk score.
+    A path must start at the investigation's first/source wallet and either show
+    a multi-hop flow or end at an independently risky endpoint.
+    """
+    source = next((_address(wallet, chain) for wallet in wallets if _address(wallet, chain)), "")
+    if not source:
+        return []
+
+    adjacency: Dict[str, List[tuple]] = defaultdict(list)
+    risky_endpoints = set()
     for item in evidence:
         frm = _address(item.get("from"), item.get("source_chain") or item.get("chain") or chain)
         to = _address(item.get("to"), item.get("destination_chain") or item.get("chain") or chain)
         if not frm or not to:
             continue
-        if frm in wallet_set or to in wallet_set:
-            if frm not in path:
-                path.append(frm)
-            if to not in path:
-                path.append(to)
-            current = to
-    if current is None and evidence:
-        path = [
-            _address(evidence[0].get("from"), evidence[0].get("source_chain") or evidence[0].get("chain") or chain),
-            _address(evidence[0].get("to"), evidence[0].get("destination_chain") or evidence[0].get("chain") or chain),
-        ]
-    return path
+        adjacency[frm].append((to, item))
+        if (
+            str(item.get("risk_classification") or "").lower() in {"sanctioned", "high_risk", "illicit"}
+            or str(item.get("entity_type") or "").lower() == "mixer"
+            or to == "0xabc0000000000000000000000000000000000000"
+        ):
+            risky_endpoints.add(to)
+
+    candidates: List[List[str]] = []
+
+    def walk(current: str, path: List[str]) -> None:
+        children = adjacency.get(current, [])
+        if (len(path) >= 3 or current in risky_endpoints) and (not children or current in risky_endpoints):
+            candidates.append(path)
+        for target, _item in children:
+            if target not in path:
+                walk(target, path + [target])
+
+    walk(source, [source])
+    if not candidates:
+        return []
+
+    def rank(path: List[str]) -> tuple:
+        endpoint = path[-1]
+        endpoint_vasp = any(
+            _address(item.get("to"), item.get("destination_chain") or item.get("chain") or chain) == endpoint
+            and str(item.get("vasp") or "UNKNOWN").upper() != "UNKNOWN"
+            for item in evidence
+        )
+        # Explicitly risky destinations take priority; otherwise prefer a
+        # meaningful but concise source-connected downstream flow.
+        return (int(endpoint in risky_endpoints), int(endpoint_vasp), len(path))
+
+    return max(candidates, key=rank)

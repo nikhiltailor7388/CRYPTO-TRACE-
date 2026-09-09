@@ -1,122 +1,216 @@
-import React, {useMemo, useState} from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 
-const NODE_COLORS: Record<string, string> = { source: '#f97316', intermediate: '#38bdf8', destination: '#a78bfa', vasp: '#22c55e', bridge: '#f59e0b', cluster: '#8b5cf6', lead: '#f43f5e' }
-const DISPLAY_EDGE_LIMIT = 100
+type Transaction = { tx_hash?: string; from?: string; to?: string; amount?: number; asset?: string; timestamp?: string; source_chain?: string; destination_chain?: string; chain?: string; vasp?: string; explorer_url?: string }
+type Node = { id: string; type: string; label: string; hop_depth?: number; cluster_id?: string | null; total_in: number; total_out: number }
+type Relationship = { id: string; source: string; target: string; asset: string; sourceChain: string; destinationChain: string; amount: number; transactions: Transaction[]; hop?: number }
 
-function shortAddress(value: string) {
-  if (!value) return 'Unknown'
-  return value.length > 12 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value
+const COLORS: Record<string, string> = { victim: '#f97316', intermediate: '#38bdf8', vasp: '#22c55e', cluster_member: '#8b5cf6', candidate: '#f43f5e' }
+const MAX_OVERVIEW_RELATIONSHIPS = 72
+
+function identity(value: unknown, chain: string) {
+  const text = String(value || '').trim()
+  return String(chain || '').toUpperCase() === 'TRON' ? text : text.toLowerCase()
 }
-function edgeIsCrossChain(edge: any) {
-  return Boolean(edge?.source_chain && edge?.destination_chain && edge.source_chain !== edge.destination_chain)
+function short(value: string) { return value.length > 13 ? `${value.slice(0, 6)}…${value.slice(-4)}` : value || 'Unknown' }
+function amount(value: number, asset: string) { return `${value.toLocaleString(undefined, { maximumFractionDigits: Math.abs(value) < 0.001 ? 8 : 4 })} ${asset}` }
+function zoomViewport(viewport: { zoom: number; x: number; y: number }, layout: { width: number; height: number }, delta: number) {
+  const zoom = Math.max(.65, Math.min(2.2, viewport.zoom + delta))
+  const ratio = zoom / viewport.zoom
+  const centerX = layout.width / 2; const centerY = layout.height / 2
+  return { zoom, x: centerX - (centerX - viewport.x) * ratio, y: centerY - (centerY - viewport.y) * ratio }
 }
 
 export default function GraphView({ data }: { data: any }) {
-  const graph = data?.graph || { nodes: [], edges: [] }
-  const nodeList = useMemo(() => (Array.isArray(graph.nodes) ? graph.nodes : []).map((node: any) => typeof node === 'string' ? {
-    id: node,
-    label: node,
-    type: node === (data?.source_wallet || data?.wallets?.[0]?.address) ? 'victim' : 'intermediate',
-  } : node), [data?.source_wallet, data?.wallets, graph.nodes])
-  const edgeList = useMemo(() => {
-    const evidenceByHash = new Map((data?.evidence || []).map((item: any) => [item.tx_hash, item]))
-    return (Array.isArray(graph.edges) ? graph.edges : []).map((edge: any) => {
-      if (!Array.isArray(edge)) return edge
-      const [source, target, txHash] = edge
-      const evidence = evidenceByHash.get(txHash) || {}
-      return { source, target, tx_hash: txHash, id: txHash || `${source}-${target}`, amount: evidence.amount, asset: evidence.asset, confidence: evidence.confidence, hop: evidence.hop }
-    })
-  }, [data?.evidence, graph.edges])
-  const candidateId = String(data?.risk_profile?.fraudster_candidate || '').toLowerCase()
-  const destinationIds = useMemo(() => new Set((data?.destination_wallets || []).map((id: string) => String(id).toLowerCase())), [data?.destination_wallets])
-  const bridgeIds = useMemo(() => new Set(edgeList.filter(edgeIsCrossChain).flatMap((edge: any) => [String(edge.source).toLowerCase(), String(edge.target).toLowerCase()])), [edgeList])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  // Node identity is the single selection source of truth. Relationship clicks
+  // intentionally do not clear it, so Wallet Details cannot fall back to a
+  // stale source selection when an investigator inspects an edge.
+  const selectedNode = selectedNodeId
+  const setSelectedNode = (nodeId: string | null) => { if (nodeId) setSelectedNodeId(nodeId) }
+  const [selectedRelationship, setSelectedRelationship] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const [viewport, setViewport] = useState({ zoom: 1, x: 0, y: 0 })
+  const drag = useRef<{ x: number; y: number } | null>(null)
+  const svg = useRef<SVGSVGElement | null>(null)
+  const chain = String(data?.chain || 'ETH').toUpperCase()
 
-  const focusedEdges = useMemo(() => {
-    const pathPairs = new Set<string>()
-    const path = data?.risk_profile?.suspicious_path || []
-    for (let index = 0; index < path.length - 1; index += 1) pathPairs.add(`${String(path[index]).toLowerCase()}|${String(path[index + 1]).toLowerCase()}`)
-    return [...edgeList].sort((left: any, right: any) => {
-      const leftPriority = pathPairs.has(`${String(left.source).toLowerCase()}|${String(left.target).toLowerCase()}`) ? 1 : 0
-      const rightPriority = pathPairs.has(`${String(right.source).toLowerCase()}|${String(right.target).toLowerCase()}`) ? 1 : 0
-      return rightPriority - leftPriority || Number(right.amount || 0) - Number(left.amount || 0)
-    }).slice(0, DISPLAY_EDGE_LIMIT)
-  }, [data?.risk_profile?.suspicious_path, edgeList])
+  useEffect(() => {
+    setSelectedNodeId(null); setSelectedRelationship(null); setShowAll(false); setViewport({ zoom: 1, x: 0, y: 0 })
+  }, [data])
 
-  const focusedNodeList = useMemo(() => {
-    const ids = new Set<string>()
-    focusedEdges.forEach((edge: any) => { ids.add(edge.source); ids.add(edge.target) })
-    nodeList.forEach((node: any) => { if (node.type === 'victim' || String(node.id).toLowerCase() === candidateId) ids.add(node.id) })
-    return nodeList.filter((node: any) => ids.has(node.id))
-  }, [candidateId, focusedEdges, nodeList])
-
-  const positions = useMemo(() => {
-    const out: Record<string, { x: number; y: number }> = {}
-    const depths: Record<string, number> = {}
-    focusedNodeList.filter((node: any) => node.type === 'victim').forEach((node: any) => { depths[node.id] = 0 })
-    focusedNodeList.forEach((node: any) => { if (Number.isFinite(node.hop_depth)) depths[node.id] = Number(node.hop_depth) })
-    for (let pass = 0; pass < focusedNodeList.length; pass += 1) focusedEdges.forEach((edge: any) => {
-      if (depths[edge.source] !== undefined && (depths[edge.target] === undefined || depths[edge.target] > depths[edge.source] + 1)) depths[edge.target] = depths[edge.source] + 1
-    })
-    const maxDepth = Math.max(1, ...Object.values(depths))
-    const layers: Record<number, any[]> = {}
-    focusedNodeList.forEach((node: any) => { (layers[depths[node.id] ?? maxDepth] ||= []).push(node) })
-    Object.entries(layers).forEach(([depthValue, nodes]) => nodes.forEach((node: any, index: number) => {
-      out[node.id] = { x: 74 + (572 * Number(depthValue)) / maxDepth, y: 74 + (300 * (index + 1)) / (nodes.length + 1) }
+  const model = useMemo(() => {
+    const evidence: Transaction[] = Array.isArray(data?.evidence) ? data.evidence.filter((item: Transaction) => item?.from && item?.to) : []
+    const rawGraph = data?.graph || {}
+    const rawEdges = Array.isArray(rawGraph.edges) ? rawGraph.edges : []
+    const transactions: Transaction[] = evidence.length ? evidence : rawEdges.map((edge: any) => Array.isArray(edge)
+      ? { from: edge[0], to: edge[1], tx_hash: edge[2], asset: chain }
+      : edge).filter((edge: Transaction) => edge?.from || edge?.source)
+      .map((edge: any) => ({ ...edge, from: edge.from || edge.source, to: edge.to || edge.target }))
+    const source = identity(data?.source_wallet || data?.wallets?.[0]?.address || transactions[0]?.from, chain)
+    const rawNodes = Array.isArray(rawGraph.nodes) ? rawGraph.nodes : []
+    const rawById = new Map(rawNodes.map((item: any) => {
+      const id = typeof item === 'string' ? item : item?.id
+      return [identity(id, chain), typeof item === 'string' ? { id } : item]
     }))
-    return out
-  }, [focusedEdges, focusedNodeList])
+    const clusters = Array.isArray(data?.wallet_clusters) ? data.wallet_clusters : []
+    const clusterById = new Map<string, string>()
+    clusters.forEach((cluster: any) => (cluster.members || []).forEach((member: string) => clusterById.set(identity(member, chain), cluster.id)))
+    const groups = new Map<string, Relationship>()
+    transactions.forEach((transaction) => {
+      const sourceId = identity(transaction.from, transaction.source_chain || transaction.chain || chain)
+      const targetId = identity(transaction.to, transaction.destination_chain || transaction.chain || chain)
+      const asset = String(transaction.asset || chain)
+      const sourceChain = String(transaction.source_chain || transaction.chain || chain)
+      const destinationChain = String(transaction.destination_chain || transaction.chain || chain)
+      const key = [sourceId, targetId, asset, sourceChain, destinationChain].join('|')
+      const relationship = groups.get(key) || { id: `relationship-${key}`, source: sourceId, target: targetId, asset, sourceChain, destinationChain, amount: 0, transactions: [] }
+      relationship.amount += Number(transaction.amount || 0)
+      relationship.transactions.push(transaction)
+      groups.set(key, relationship)
+    })
+    const relationships = [...groups.values()]
+    const adjacency = new Map<string, string[]>()
+    relationships.forEach((relationship) => adjacency.set(relationship.source, [...(adjacency.get(relationship.source) || []), relationship.target]))
+    const hops = new Map<string, number>()
+    if (source) hops.set(source, 0)
+    const queue = source ? [source] : []
+    while (queue.length) {
+      const current = queue.shift()!
+      for (const next of adjacency.get(current) || []) {
+        const depth = (hops.get(current) || 0) + 1
+        if (!hops.has(next) || depth < hops.get(next)!) { hops.set(next, depth); queue.push(next) }
+      }
+    }
+    relationships.forEach((relationship) => { relationship.hop = hops.has(relationship.source) ? hops.get(relationship.source)! + 1 : undefined })
+    const ids = new Set<string>([...rawById.keys(), ...relationships.flatMap((relationship) => [relationship.source, relationship.target])])
+    const vaspIds = new Set(transactions.filter((transaction) => transaction.vasp && String(transaction.vasp).toUpperCase() !== 'UNKNOWN').flatMap((transaction) => [identity(transaction.from, transaction.source_chain || transaction.chain || chain), identity(transaction.to, transaction.destination_chain || transaction.chain || chain)]))
+    const candidate = identity(data?.risk_profile?.fraudster_candidate, chain)
+    const nodes: Node[] = [...ids].map((id) => {
+      const raw = rawById.get(id) || {}
+      const totalIn = relationships.filter((relationship) => relationship.target === id).reduce((sum, relationship) => sum + relationship.amount, 0)
+      const totalOut = relationships.filter((relationship) => relationship.source === id).reduce((sum, relationship) => sum + relationship.amount, 0)
+      const type = id === source ? 'victim' : id === candidate ? 'candidate' : vaspIds.has(id) ? 'vasp' : clusterById.has(id) ? 'cluster_member' : 'intermediate'
+      const hopDepth = hops.get(id) ?? raw.hop_depth
+      return { id, label: raw.label || (type === 'victim' ? 'Source wallet' : type === 'vasp' ? 'VASP / entity' : `Observed wallet${hopDepth === undefined ? '' : ` — Hop ${hopDepth}`}`), type, cluster_id: raw.cluster_id || clusterById.get(id) || null, hop_depth: hopDepth, total_in: totalIn, total_out: totalOut }
+    })
+    const maxDegree = Math.max(0, ...nodes.map((node) => relationships.filter((relationship) => relationship.source === node.id || relationship.target === node.id).length))
+    const branchFactor = Math.max(0, ...[...adjacency.values()].map((targets) => new Set(targets).size))
+    const complexity = nodes.length <= 2 && relationships.length <= 1 ? 'minimal' : nodes.length <= 14 && relationships.length <= 16 ? 'medium' : nodes.length < 100 && relationships.length < 100 ? 'high' : 'advanced'
+    return { nodes, relationships, clusters, source, complexity, maxDegree, branchFactor, transactionCount: transactions.length }
+  }, [chain, data])
 
-  const roleFor = (node: any) => {
-    const id = String(node.id).toLowerCase()
-    if (node.type === 'victim') return 'source'
-    if (id === candidateId) return 'lead'
-    if (node.type === 'vasp') return 'vasp'
-    if (bridgeIds.has(id)) return 'bridge'
-    if (destinationIds.has(id)) return 'destination'
-    if (node.type === 'cluster_member') return 'cluster'
-    return 'intermediate'
-  }
-  const selectedNode = focusedNodeList.find((node: any) => node.id === selectedNodeId) || focusedNodeList[0] || null
-  const maxDepth = Math.max(0, ...focusedNodeList.map((node: any) => Number(node.hop_depth ?? 0)))
+  const visibleRelationships = useMemo(() => {
+    if (showAll || model.relationships.length <= MAX_OVERVIEW_RELATIONSHIPS) return model.relationships
+    const score = (relationship: Relationship) => relationship.amount + relationship.transactions.length * 1_000_000 + (relationship.source === model.source ? 100_000_000 : 0)
+    return [...model.relationships].sort((left, right) => score(right) - score(left)).slice(0, MAX_OVERVIEW_RELATIONSHIPS)
+  }, [model.relationships, model.source, showAll])
 
-  if (!nodeList.length) return <div className="graph-shell empty-graph"><div><strong>No saved flow graph</strong><span>The investigation has no recorded wallet relationships to visualize.</span></div></div>
+  const layout = useMemo(() => {
+    const visibleIds = new Set(visibleRelationships.flatMap((relationship) => [relationship.source, relationship.target]))
+    if (model.source) visibleIds.add(model.source)
+    const nodes = model.nodes.filter((node) => visibleIds.has(node.id))
+    const degree = new Map(nodes.map((node) => [node.id, visibleRelationships.filter((relationship) => relationship.source === node.id || relationship.target === node.id).length]))
+    const layers = new Map<number, Node[]>()
+    nodes.forEach((node) => layers.set(node.hop_depth ?? 999, [...(layers.get(node.hop_depth ?? 999) || []), node]))
+    const layerKeys = [...layers.keys()].sort((a, b) => a - b)
+    layerKeys.forEach((key) => layers.get(key)!.sort((left, right) => (degree.get(right.id)! - degree.get(left.id)!) || left.id.localeCompare(right.id)))
+    for (let pass = 0; pass < 4; pass += 1) {
+      layerKeys.forEach((key) => {
+        const layer = layers.get(key)!
+        layer.sort((left, right) => {
+          const center = (node: Node) => {
+            const neighbours = visibleRelationships.filter((relationship) => relationship.target === node.id || relationship.source === node.id).map((relationship) => relationship.target === node.id ? relationship.source : relationship.target)
+            const positions = neighbours.map((id) => layers.get((nodes.find((node) => node.id === id)?.hop_depth) ?? 999)?.findIndex((node) => node.id === id) ?? 0)
+            return positions.length ? positions.reduce((sum, value) => sum + value, 0) / positions.length : degree.get(node.id) || 0
+          }
+          return center(left) - center(right) || left.id.localeCompare(right.id)
+        })
+      })
+    }
+    const compact = model.complexity === 'minimal'
+    const maxLayer = Math.max(0, ...layerKeys.filter((key) => key < 999))
+    // Each hop receives a band, rather than one fixed x-coordinate. Dense hops
+    // are packed into a small grid, retaining the sorted investigative order.
+    const bands = layerKeys.map((key) => {
+      const layer = layers.get(key)!
+      const layerDegree = Math.max(0, ...layer.map((node) => degree.get(node.id) || 0))
+      const rows = compact ? 1 : Math.min(7, Math.max(1, Math.ceil(Math.sqrt(layer.length * (layerDegree > 8 ? .9 : .62)))))
+      const columns = Math.max(1, Math.ceil(layer.length / rows))
+      const contentWidth = (columns - 1) * 96
+      const width = compact ? 280 : Math.max(190, contentWidth + 118 + Math.min(96, layerDegree * 3))
+      return { key, layer, rows, contentWidth, width, start: 0 }
+    })
+    let cursor = compact ? 80 : 54
+    bands.forEach((band) => { band.start = cursor; cursor += band.width + (compact ? 0 : 38) })
+    const maxRows = Math.max(1, ...bands.map((band) => band.rows))
+    const width = compact ? 440 : Math.max(620, cursor + 20)
+    const height = compact ? 260 : Math.max(390, maxRows * 82 + 150)
+    const positions = new Map<string, { x: number; y: number }>()
+    bands.forEach((band) => {
+      band.layer.forEach((node, index) => {
+        if (compact) {
+          positions.set(node.id, { x: band.start + (band.key === 0 ? 20 : 150), y: height / 2 })
+          return
+        }
+        const column = Math.floor(index / band.rows)
+        const row = index % band.rows
+        positions.set(node.id, {
+          x: band.start + (band.width - band.contentWidth) / 2 + column * 96,
+          y: height / 2 + (row - (band.rows - 1) / 2) * 82
+        })
+      })
+    })
+    return { nodes, positions, width, height, maxLayer, bands, compact }
+  }, [model, visibleRelationships])
 
-  return <div className="graph-investigation">
+  // These controls alter only the viewport. The layout and investigation data
+  // remain stable while zooming, panning, or fitting the current graph.
+  const setZoom = (updater: (value: number) => number) => setViewport((value) => zoomViewport(value, layout, updater(value.zoom) - value.zoom))
+  const setPan = (next: { x: number; y: number }) => setViewport((value) => ({ ...value, x: next.x, y: next.y }))
+
+  const selectedEdge = visibleRelationships.find((relationship) => relationship.id === selectedRelationship) || null
+  const selected = (selectedNodeId ? layout.nodes.find((node) => node.id === selectedNodeId) : null) || layout.nodes.find((node) => node.id === model.source) || null
+  const selectedTransactionCount = visibleRelationships.reduce((sum, relationship) => sum + relationship.transactions.length, 0)
+  const allVisible = visibleRelationships.length === model.relationships.length
+
+  if (!model.nodes.length) return <div className="graph-shell empty-graph">No recorded wallet relationships are available for this investigation.</div>
+
+  return <div className={`graph-investigation graph-${model.complexity}`}>
     <div className="graph-context">
-      <div><span className="label">Recorded transactions</span><strong>{focusedEdges.length} in view</strong></div>
-      <div><span className="label">Trace depth</span><strong>{maxDepth} hop{maxDepth === 1 ? '' : 's'} reached</strong></div>
-      <div><span className="label">Observed endpoints</span><strong>{destinationIds.size || 0} recorded</strong></div>
+      <div><span className="label">Investigation graph</span><strong>{model.nodes.length} wallets · {model.relationships.length} relationships</strong></div>
+      <div><span className="label">Evidence represented</span><strong>{model.transactionCount} transactions</strong></div>
+      <div><span className="label">Structure</span><strong>{layout.maxLayer} hops · max degree {model.maxDegree}</strong></div>
+      <div><span className="label">View mode</span><strong>{model.complexity} · branching {model.branchFactor}</strong></div>
     </div>
-    <div className="graph-legend" aria-label="Graph legend">
-      <span><i className="legend-dot source" />Source</span><span><i className="legend-dot intermediate" />Observed wallet</span>
-      {destinationIds.size ? <span><i className="legend-dot destination" />Recorded destination</span> : null}
-      {focusedNodeList.some((node: any) => node.type === 'vasp') ? <span><i className="legend-dot vasp" />VASP/entity</span> : null}
-      {bridgeIds.size ? <span><i className="legend-dot bridge" />Cross-chain boundary</span> : null}
-      {candidateId ? <span><i className="legend-dot lead" />Investigative lead</span> : null}
-    </div>
-    {edgeList.length > focusedEdges.length ? <div className="empty-table">Focused view: showing {focusedEdges.length} of {edgeList.length} recorded transactions. The complete ledger remains available below.</div> : null}
+    <div className="graph-legend"><span><i className="legend-dot source" />Source</span><span><i className="legend-dot intermediate" />Observed wallet</span><span><i className="legend-dot vasp" />VASP/entity</span><span><i className="legend-dot lead" />Investigative lead</span><span>Click a relationship for its underlying evidence.</span></div>
+    {!allVisible ? <div className="graph-notice">Overview shows {visibleRelationships.length} of {model.relationships.length} relationships, representing {selectedTransactionCount} of {model.transactionCount} transactions. <button type="button" onClick={() => setShowAll(true)}>Show all relationships</button></div> : model.relationships.length > MAX_OVERVIEW_RELATIONSHIPS ? <div className="graph-notice">Showing all {model.relationships.length} relationships. <button type="button" onClick={() => setShowAll(false)}>Return to focused overview</button></div> : null}
     <div className="graph-layout">
-      <svg className="graph-shell" viewBox="0 0 720 440" role="img" aria-label="Directional wallet relationship map">
-        <defs><marker id="trace-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L7,3 z" fill="#5eead4" /></marker><marker id="trace-arrow-probable" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L7,3 z" fill="#f59e0b" /></marker></defs>
-        {Array.from({ length: maxDepth + 1 }, (_, depth) => <text key={depth} x={74 + (572 * depth) / Math.max(1, maxDepth)} y="28" fill="#94a3b8" fontSize="11" textAnchor="middle">{depth === 0 ? 'SOURCE' : `HOP ${depth}`}</text>)}
-        {focusedEdges.map((edge: any) => {
-          const source = positions[edge.source]; const target = positions[edge.target]
-          if (!source || !target) return null
-          const isProbable = edge.edge_type === 'probable_mixer' || edge.edge_type === 'probable_dex'
-          const parallels = focusedEdges.filter((item: any) => item.source === edge.source && item.target === edge.target)
-          const curve = parallels.length > 1 ? (parallels.findIndex((item: any) => item.id === edge.id) - (parallels.length - 1) / 2) * 14 : 0
-          const midX = (source.x + target.x) / 2; const midY = (source.y + target.y) / 2 - 13 + curve
-          const label = `${Number(edge.amount || 0).toFixed(3)} ${edge.asset || data?.chain || 'asset'}`
-          return <g key={edge.id || `${edge.source}-${edge.target}`}><path d={`M ${source.x} ${source.y} Q ${midX} ${midY + 13} ${target.x} ${target.y}`} fill="none" stroke={isProbable ? '#f59e0b' : '#5eead4'} strokeWidth="2.2" strokeDasharray={isProbable ? '6 6' : '0'} markerEnd={`url(#${isProbable ? 'trace-arrow-probable' : 'trace-arrow'})`} opacity="0.9" /><title>{`${edge.tx_hash || 'transaction'}: ${label}${edge.confidence ? ` / confidence ${edge.confidence}%` : ''}`}</title>{focusedEdges.length <= 30 ? <text x={midX} y={midY} fill="#dbeafe" fontSize="10" textAnchor="middle">{label}</text> : null}</g>
-        })}
-        {focusedNodeList.map((node: any) => {
-          const point = positions[node.id]; if (!point) return null
-          const role = roleFor(node); const isSelected = selectedNodeId === node.id
-          return <g key={node.id} className="graph-node" onClick={() => setSelectedNodeId(node.id)}><circle cx={point.x} cy={point.y} r={isSelected ? 19 : 15} fill={NODE_COLORS[role]} stroke="#f8fafc" strokeWidth={isSelected ? 3 : 2} opacity="0.98" /><text x={point.x} y={point.y + 4} fill="#f8fafc" fontSize="9" textAnchor="middle">{shortAddress(node.id)}</text><text x={point.x} y={point.y + 30} fill="#cbd5e1" fontSize="9" textAnchor="middle">{role === 'source' ? 'Source' : node.hop_depth !== undefined && node.hop_depth !== null ? `Hop ${node.hop_depth}` : role}</text><title>{`${node.id} | ${role} | total_in=${node.total_in} | total_out=${node.total_out}`}</title></g>
-        })}
-      </svg>
-      {selectedNode ? <aside className="panel graph-node-details"><div className="panel-header inline-header"><span className="eyebrow">Selected wallet</span><h3>{roleFor(selectedNode)}</h3></div><dl><div><dt>Address</dt><dd><code>{selectedNode.id}</code></dd></div><div><dt>Saved role</dt><dd>{selectedNode.type || 'observed wallet'}</dd></div><div><dt>Trace position</dt><dd>{selectedNode.hop_depth ?? 'Not reachable from source'}</dd></div>{String(selectedNode.id).toLowerCase() === candidateId ? <div className="lead-note">Investigative lead only. It is not proof of identity, ownership, or unlawful activity.</div> : null}<div><dt>Cluster</dt><dd>{selectedNode.cluster_id || 'None recorded'}</dd></div><div><dt>Observed totals</dt><dd>In {Number(selectedNode.total_in || 0).toFixed(6)} · Out {Number(selectedNode.total_out || 0).toFixed(6)}</dd></div></dl></aside> : null}
+      <div className="graph-canvas-wrap">
+        <div className="graph-toolbar"><button type="button" onClick={() => setZoom((value) => Math.max(.65, value - .15))}>−</button><button type="button" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }}>Fit view</button><button type="button" onClick={() => setZoom((value) => Math.min(2.2, value + .15))}>+</button></div>
+        <svg ref={svg} className="graph-shell adaptive-graph" viewBox={`0 0 ${layout.width} ${layout.height}`} role="img" aria-label="Directional blockchain wallet relationship graph" onWheel={(event) => { event.preventDefault(); setViewport((value) => zoomViewport(value, layout, event.deltaY < 0 ? .12 : -.12)) }} onPointerDown={(event) => { drag.current = { x: event.clientX, y: event.clientY }; event.currentTarget.setPointerCapture(event.pointerId) }} onPointerMove={(event) => { if (!drag.current || !svg.current) return; const bounds = svg.current.getBoundingClientRect(); const dx = (event.clientX - drag.current.x) * layout.width / bounds.width; const dy = (event.clientY - drag.current.y) * layout.height / bounds.height; setViewport((value) => ({ ...value, x: value.x + dx, y: value.y + dy })); drag.current = { x: event.clientX, y: event.clientY } }} onPointerUp={() => { drag.current = null }} onPointerCancel={() => { drag.current = null }}>
+          <defs><marker id="flow-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L7,3 z" fill="#5eead4" /></marker></defs>
+          <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.zoom})`}>
+            {!layout.compact && layout.bands.filter((band) => band.key < 999).map((band) => <text key={`hop-${band.key}`} x={band.start + band.width / 2} y="30" className="hop-label">HOP {band.key}</text>)}
+            {model.clusters.map((cluster: any) => {
+              const points = (cluster.members || []).map((member: string) => layout.positions.get(identity(member, chain))).filter(Boolean) as { x: number; y: number }[]
+              if (points.length < 2) return null
+              const padding = 30 + Math.min(18, points.length * 2); const minX = Math.min(...points.map((point) => point.x)) - padding; const maxX = Math.max(...points.map((point) => point.x)) + padding; const minY = Math.min(...points.map((point) => point.y)) - padding; const maxY = Math.max(...points.map((point) => point.y)) + padding
+              return <g key={cluster.id}><rect x={minX} y={minY} width={maxX - minX} height={maxY - minY} rx="18" className="cluster-boundary" /><text x={minX + 9} y={minY + 15} className="cluster-label">{cluster.id}</text></g>
+            })}
+            {visibleRelationships.map((relationship) => {
+              const source = layout.positions.get(relationship.source); const target = layout.positions.get(relationship.target)
+              if (!source || !target) return null
+              const selected = selectedRelationship === relationship.id; const dx = target.x - source.x; const dy = target.y - source.y
+              const parallel = visibleRelationships.filter((item) => item.source === relationship.source && item.target === relationship.target); const parallelIndex = parallel.findIndex((item) => item.id === relationship.id)
+              const curve = Math.max(-42, Math.min(42, dy * .16 + (parallelIndex - (parallel.length - 1) / 2) * 14))
+              const labelVisible = model.complexity === 'minimal' || (model.complexity === 'medium' && visibleRelationships.length <= 12) || selected
+              return <g key={relationship.id} className="relationship" onClick={(event) => { event.stopPropagation(); setSelectedRelationship(relationship.id); setSelectedNode(null) }}><path d={`M ${source.x} ${source.y} Q ${source.x + dx / 2} ${source.y + dy / 2 + curve} ${target.x} ${target.y}`} markerEnd="url(#flow-arrow)" className={selected ? 'relationship-line selected' : 'relationship-line'} style={{ strokeWidth: Math.min(5, 1.8 + Math.log2(relationship.transactions.length + 1) * .55) }} /><title>{`${relationship.transactions.length} transactions · ${amount(relationship.amount, relationship.asset)}`}</title>{labelVisible ? <text x={source.x + dx / 2} y={source.y + dy / 2 + curve - 7} className="relationship-label">{relationship.transactions.length} tx · {amount(relationship.amount, relationship.asset)}</text> : null}</g>
+            })}
+            {layout.nodes.map((node) => { const point = layout.positions.get(node.id)!; const isSelected = selectedNode === node.id; const color = COLORS[node.type] || COLORS.intermediate; return <g key={node.id} className={isSelected ? 'graph-node selected-node' : 'graph-node'} onClick={(event) => { event.stopPropagation(); setSelectedNode(node.id); setSelectedRelationship(null) }}><circle cx={point.x} cy={point.y} r={isSelected ? 20 : 16} fill={color} className="wallet-node" /><text x={point.x} y={point.y + 4} className="wallet-address">{short(node.id)}</text><text x={point.x} y={point.y + 32} className="wallet-meta">{node.type === 'victim' ? 'Source' : `Hop ${node.hop_depth ?? '?'}`}</text><title>{`${node.label}: ${node.id}`}</title></g> })}
+          </g>
+        </svg>
+      </div>
+      {selectedEdge ? <aside className="panel graph-detail"><span className="eyebrow">Wallet relationship</span><h3>{short(selectedEdge.source)} → {short(selectedEdge.target)}</h3><dl><div><dt>Transactions</dt><dd>{selectedEdge.transactions.length}</dd></div><div><dt>Aggregated amount</dt><dd>{amount(selectedEdge.amount, selectedEdge.asset)}</dd></div><div><dt>Hop</dt><dd>{selectedEdge.hop ?? 'Not reached from source'}</dd></div></dl><strong>Underlying evidence</strong><div className="transaction-list">{selectedEdge.transactions.map((transaction, index) => <div key={`${transaction.tx_hash || 'transaction'}-${index}`}><code>{short(String(transaction.tx_hash || 'transaction'))}</code><span>{amount(Number(transaction.amount || 0), transaction.asset || selectedEdge.asset)}</span></div>)}</div></aside> : selected ? <aside className="panel graph-detail"><span className="eyebrow">Wallet details</span><h3>{selected.label}</h3><dl><div><dt>Address</dt><dd><code>{selected.id}</code></dd></div><div><dt>Hop</dt><dd>{selected.hop_depth ?? 'Not reached from source'}</dd></div><div><dt>Cluster</dt><dd>{selected.cluster_id || 'None recorded'}</dd></div><div><dt>Observed in / out</dt><dd>{selected.total_in.toFixed(6)} / {selected.total_out.toFixed(6)}</dd></div><div><dt>Relationships in view</dt><dd>{visibleRelationships.filter((relationship) => relationship.source === selected.id || relationship.target === selected.id).length}</dd></div></dl></aside> : null}
     </div>
   </div>
 }
